@@ -1,58 +1,25 @@
-"""
-Elo-Memory: Bio-inspired episodic memory system for AI agents.
-
-Implements EM-LLM (ICLR 2025) with 8 core components:
-- Bayesian Surprise Detection
-- Event Segmentation  
-- Episodic Storage
-- Two-Stage Retrieval
-- Memory Consolidation
-- Forgetting & Decay
-- Interference Resolution
-- Online Learning
-
-License: MIT
-"""
-
-__version__ = "0.1.1"
-__author__ = "Lorenc"
-__license__ = "MIT"
-
-# Import from component modules
-# These assume the src/ directory is in PYTHONPATH or installed as package
-
-try:
-    from .surprise.bayesian_surprise import BayesianSurpriseEngine, SurpriseConfig
-    from .segmentation.event_segmenter import EventSegmenter, SegmentationConfig
-    from .memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig, Episode
-    from .retrieval.two_stage_retriever import TwoStageRetriever, RetrievalConfig
-    from .consolidation.memory_consolidation import MemoryConsolidationEngine, ConsolidationConfig
-    from .memory.forgetting import ForgettingEngine, ForgettingConfig
-    from .memory.interference import InterferenceResolver, InterferenceConfig
-    from .online_learning import OnlineLearner, OnlineLearningConfig
-    
-    __all__ = [
-        "BayesianSurpriseEngine",
-        "SurpriseConfig",
-        "EventSegmenter",
-        "SegmentationConfig",
-        "EpisodicMemoryStore",
-        "EpisodicMemoryConfig",
-        "Episode",
-        "TwoStageRetriever",
-        "RetrievalConfig",
-        "MemoryConsolidationEngine",
-        "ConsolidationConfig",
-        "ForgettingEngine",
-        "ForgettingConfig",
-        "InterferenceResolver",
-        "InterferenceConfig",
-        "OnlineLearner",
-        "OnlineLearningConfig",
-        "__version__",
-        "__author__",
-        "__license__",
-    ]
-except ImportError as e:
-    # If imports fail, still expose metadata
-    __all__ = ["__version__", "__author__", "__license__"]
+   1 | """
+   2 | Elo-Memory: Bio-inspired episodic memory system for AI agents.
+   3 | 
+   4 | Implements EM-LLM (ICLR 2025) with 8 core components:
+   5 | - Bayesian Surprise Detection
+   6 | - Event Segmentation  
+   7 | - Episodic Storage
+   8 | - Two-Stage Retrieval
+   9 | - Memory Consolidation
+  10 | - Forgetting & Decay
+  11 | - Interference Resolution
+  12 | - Online Learning
+  13 | 
+  14 | License: MIT
+  15 | """
+  16 | 
+  17 | __version__ = "0.1.1"
+  18 | __author__ = "Lorenc Ndoj, Elvi Zekaj"
+  19 | __license__ = "MIT"
+  20 | 
+  21 | # Import from component modules
+  22 | # These assume the src/ directory is in PYTHONPATH or installed as package
+  23 | 
+  24 | try:
+  25 |     from .surprise.bayesian_surprise import BayesianSurpriseEngine, SurpriseConfig
