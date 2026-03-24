@@ -14,7 +14,7 @@ Implements EM-LLM (ICLR 2025) with 8 core components:
 License: MIT
 """
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
 __license__ = "MIT"
 
