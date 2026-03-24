@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Server for Neuro-Memory-Agent
+MCP Server for Elo Memory
 Exposes memory operations as MCP tools
 """
 
@@ -31,7 +31,7 @@ except ImportError:
 
 
 class NeuroMemoryMCP:
-    """MCP Server for Neuro-Memory-Agent"""
+    """MCP Server for Elo Memory"""
 
     def __init__(self, input_dim: int = None):
         self.input_dim = input_dim or EMBEDDING_DIM

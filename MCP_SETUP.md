@@ -1,13 +1,13 @@
 # MCP Setup Guide
 
-Integrate Neuro-Memory-Agent with Claude Code or any MCP-compatible client.
+Integrate Elo Memory with Claude Code or any MCP-compatible client.
 
 ## Quick Start
 
 ### 1. Install the Package
 
 ```bash
-cd neuro-memory-opensource
+cd elo-memory-opensource
 pip install -e ".[dev]"
 ```
 
@@ -18,11 +18,11 @@ Add to your Claude Code MCP settings (usually `~/.config/claude-code/mcp.json`):
 ```json
 {
   "mcpServers": {
-    "neuro-memory": {
+    "elo-memory": {
       "command": "python3",
-      "args": ["/path/to/neuro-memory-opensource/mcp_server.py"],
+      "args": ["/path/to/elo-memory-opensource/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "/path/to/neuro-memory-opensource/src"
+        "PYTHONPATH": "/path/to/elo-memory-opensource/src"
       }
     }
   }
@@ -34,8 +34,8 @@ Or use the installed entry point (if you add one to pyproject.toml):
 ```json
 {
   "mcpServers": {
-    "neuro-memory": {
-      "command": "neuro-memory",
+    "elo-memory": {
+      "command": "elo-memory",
       "args": ["mcp"]
     }
   }
