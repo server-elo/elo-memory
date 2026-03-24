@@ -1,4 +1,4 @@
-# Neuro-Memory-Agent: Real-World Usage Guide
+# Elo Memory: Real-World Usage Guide
 
 ## Quick Start (5 minutes)
 

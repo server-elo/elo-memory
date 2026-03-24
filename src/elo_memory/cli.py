@@ -8,7 +8,7 @@ def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="neuro-memory",
-        description="Neuro-Memory-Agent: Bio-inspired episodic memory for AI"
+        description="Elo Memory: Bio-inspired episodic memory for AI"
     )
     
     parser.add_argument(
@@ -45,7 +45,7 @@ def main():
         
     elif args.command == "info":
         from . import __version__, __license__
-        print(f"Neuro-Memory-Agent {__version__}")
+        print(f"Elo Memory {__version__}")
         print(f"License: {__license__}")
         print("Bio-inspired episodic memory system implementing EM-LLM (ICLR 2025)")
         print("\nComponents:")

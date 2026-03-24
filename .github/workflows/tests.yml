@@ -37,7 +37,7 @@ jobs:
     
     - name: Test with pytest
       run: |
-        pytest tests/ -v --cov=neuro_memory --cov-report=xml
+        pytest tests/ -v --cov=elo_memory --cov-report=xml
     
     - name: Upload coverage
       uses: codecov/codecov-action@v3
