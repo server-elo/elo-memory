@@ -5,10 +5,10 @@
 ### 1. Basic Integration
 
 ```python
-from src.surprise import BayesianSurpriseEngine, SurpriseConfig
-from src.segmentation import EventSegmenter, SegmentationConfig
-from src.memory import EpisodicMemoryStore, EpisodicMemoryConfig
-from src.retrieval import TwoStageRetriever, RetrievalConfig
+from elo_memory.surprise import BayesianSurpriseEngine, SurpriseConfig
+from elo_memory.segmentation import EventSegmenter, SegmentationConfig
+from elo_memory.memory import EpisodicMemoryStore, EpisodicMemoryConfig
+from elo_memory.retrieval import TwoStageRetriever, RetrievalConfig
 
 # Initialize system
 input_dim = 768  # embedding dimension (e.g., from sentence-transformers)
@@ -122,7 +122,7 @@ while True:
 ### Use Case 2: Document Processing Pipeline
 
 ```python
-from src.consolidation import MemoryConsolidationEngine, ConsolidationConfig
+from elo_memory.consolidation import MemoryConsolidationEngine, ConsolidationConfig
 
 # Initialize
 consolidation = MemoryConsolidationEngine(ConsolidationConfig(replay_batch_size=32))
@@ -193,7 +193,7 @@ def monitor_sensor_stream(sensor_data_stream):
 ### Use Case 4: Online Learning Agent
 
 ```python
-from src.online_learning import OnlineLearner, OnlineLearningConfig
+from elo_memory.online_learning import OnlineLearner, OnlineLearningConfig
 
 # Initialize
 learner = OnlineLearner(
@@ -244,7 +244,7 @@ async def store_episode_async(episode_data):
 
 ### 3. Memory Management
 ```python
-from src.memory.forgetting import ForgettingEngine, ForgettingConfig
+from elo_memory.memory.forgetting import ForgettingEngine, ForgettingConfig
 
 # Auto-cleanup old memories
 forgetting_engine = ForgettingEngine(ForgettingConfig(decay_rate=0.5))
@@ -356,7 +356,7 @@ def store_multimodal_episode(text, image, audio):
 ## Next Steps
 
 1. **Run examples/complete_system.py** to see full pipeline
-2. **Run test_new_data.py** to understand behavior on different data
+2. **Run tests/test_surprise.py** to understand behavior on different data
 3. **Integrate with your embedding model** (sentence-transformers, OpenAI, etc.)
 4. **Start with small dataset** to tune parameters
 5. **Monitor surprise distribution** to validate thresholds
@@ -381,7 +381,7 @@ def store_multimodal_episode(text, image, audio):
 
 ## Support
 
-- GitHub Issues: [link to repo]
-- Documentation: See `/docs` folder
-- Examples: See `/examples` folder
-- Tests: See `test_new_data.py` for diverse scenarios
+- GitHub Issues: https://github.com/server-elo/elo-memory/issues
+- Documentation: See README.md
+- Examples: See `examples/` folder
+- Tests: See `tests/test_surprise.py` for diverse scenarios

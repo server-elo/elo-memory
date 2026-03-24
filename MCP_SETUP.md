@@ -7,7 +7,12 @@ Integrate Elo Memory with Claude Code or any MCP-compatible client.
 ### 1. Install the Package
 
 ```bash
-cd elo-memory-opensource
+# Install from PyPI
+pip install elo-memory
+
+# Or for development:
+git clone https://github.com/server-elo/elo-memory.git
+cd elo-memory
 pip install -e ".[dev]"
 ```
 
@@ -20,9 +25,9 @@ Add to your Claude Code MCP settings (usually `~/.config/claude-code/mcp.json`):
   "mcpServers": {
     "elo-memory": {
       "command": "python3",
-      "args": ["/path/to/elo-memory-opensource/mcp_server.py"],
+      "args": ["/path/to/elo-memory/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "/path/to/elo-memory-opensource/src"
+        "PYTHONPATH": "/path/to/elo-memory/src"
       }
     }
   }
