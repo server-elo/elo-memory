@@ -167,4 +167,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Status**: Production ready ✅
 
-Made with ❤️ by the Neuro-Memory-Agent community.
+Made with ❤️ by the Elo Memory community.
