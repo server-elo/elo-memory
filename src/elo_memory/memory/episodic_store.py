@@ -296,8 +296,8 @@ class EpisodicMemoryStore:
                     "timestamp": episode.timestamp.isoformat(),
                     "location": episode.location or "",
                     "entities": ",".join(episode.entities),
-                    "surprise": episode.surprise,
-                    "importance": episode.importance
+                    "surprise": float(episode.surprise),
+                    "importance": float(episode.importance),
                 }]
             )
     
