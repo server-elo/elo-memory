@@ -90,10 +90,6 @@ results = memory.retrieve(query_embedding, k=5)
 
 - [Usage Guide](USAGE_GUIDE.md) — Real-world integration patterns
 - [MCP Setup](MCP_SETUP.md) — Claude Code integration
-- [Performance Comparison](COMPARISON.md) — Benchmarks vs competitors
-- [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — Honest assessment
-- [Real-World Project](REAL_WORLD_PROJECT.md) — Build an AI assistant
-- [Strategic Plan](STRATEGIC_PLAN.md) — Roadmap & vision
 
 ---
 
