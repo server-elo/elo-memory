@@ -3,7 +3,7 @@
    3 | [![PyPI version](https://badge.fury.io/py/neuro-memory.svg)](https://badge.fury.io/py/neuro-memory)
    4 | [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
    5 | [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-   6 | [![Tests](https://github.com/lorenc/neuro-memory-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/lorenc/neuro-memory-agent/actions)
+   6 | [![Tests](https://github.com/server-elo/elo-memory/actions/workflows/tests.yml/badge.svg)](https://github.com/server-elo/elo-memory/actions)
    7 | [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
    8 | 
    9 | **Bio-inspired episodic memory system implementing EM-LLM (ICLR 2025).**
@@ -106,8 +106,8 @@
  106 | 
  107 | ### From Source
  108 | ```bash
- 109 | git clone https://github.com/lorenc/neuro-memory-agent.git
- 110 | cd neuro-memory-agent
+ 109 | git clone https://github.com/server-elo/elo-memory.git
+ 110 | cd elo-memory
  111 | pip install -e ".[dev]"
  112 | ```
  113 | 
@@ -133,8 +133,8 @@
  133 | 
  134 | Quick start:
  135 | ```bash
- 136 | git clone https://github.com/lorenc/neuro-memory-agent.git
- 137 | cd neuro-memory-agent
+ 136 | git clone https://github.com/server-elo/elo-memory.git
+ 137 | cd elo-memory
  138 | pip install -e ".[dev]"
  139 | pytest
  140 | ```
@@ -158,10 +158,10 @@
  158 | 
  159 | ## 🔗 Links
  160 | 
- 161 | - **GitHub**: https://github.com/lorenc/neuro-memory-agent
+ 161 | - **GitHub**: https://github.com/server-elo/elo-memory
  162 | - **PyPI**: https://pypi.org/project/neuro-memory/
- 163 | - **Documentation**: https://github.com/lorenc/neuro-memory-agent#readme
- 164 | - **Issues**: https://github.com/lorenc/neuro-memory-agent/issues
+ 163 | - **Documentation**: https://github.com/server-elo/elo-memory#readme
+ 164 | - **Issues**: https://github.com/server-elo/elo-memory/issues
  165 | 
  166 | ---
  167 | 
