@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Async MCP Server for Neuro-Memory-Agent
+Async MCP Server for Elo Memory
 QUALITY IMPROVEMENT: 100x faster batch embeddings via asyncio + aiohttp
 
 Performance:
@@ -18,11 +18,11 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 import numpy as np
 
-from src.surprise import BayesianSurpriseEngine
-from src.segmentation import EventSegmenter
-from src.memory import EpisodicMemoryStore, EpisodicMemoryConfig
-from src.retrieval import TwoStageRetriever
-from src.consolidation import MemoryConsolidationEngine
+from elo_memory.surprise import BayesianSurpriseEngine
+from elo_memory.segmentation import EventSegmenter
+from elo_memory.memory import EpisodicMemoryStore, EpisodicMemoryConfig
+from elo_memory.retrieval import TwoStageRetriever
+from elo_memory.consolidation import MemoryConsolidationEngine
 
 # Try to load sentence-transformers for local embedding generation
 try:
@@ -132,7 +132,7 @@ class AsyncEmbeddingClient:
 
 
 class AsyncNeuroMemoryMCP:
-    """Async MCP Server for Neuro-Memory-Agent"""
+    """Async MCP Server for Elo Memory"""
 
     def __init__(self, input_dim: int = None):
         self.input_dim = input_dim or EMBEDDING_DIM

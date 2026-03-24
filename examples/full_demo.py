@@ -1,5 +1,5 @@
 """
-Complete Neuro-Memory-Agent Demo
+Complete Elo Memory Demo
 ================================
 
 Demonstrates the full pipeline:
@@ -18,10 +18,10 @@ sys.path.append(str(Path(__file__).parent.parent))
 import numpy as np
 from datetime import datetime, timedelta
 
-from src.surprise import BayesianSurpriseEngine, SurpriseConfig
-from src.segmentation import EventSegmenter, SegmentationConfig
-from src.memory import EpisodicMemoryStore, EpisodicMemoryConfig
-from src.retrieval import TwoStageRetriever, RetrievalConfig
+from elo_memory.surprise import BayesianSurpriseEngine, SurpriseConfig
+from elo_memory.segmentation import EventSegmenter, SegmentationConfig
+from elo_memory.memory import EpisodicMemoryStore, EpisodicMemoryConfig
+from elo_memory.retrieval import TwoStageRetriever, RetrievalConfig
 
 
 def generate_synthetic_day():
