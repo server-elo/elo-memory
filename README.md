@@ -14,7 +14,31 @@ The missing memory layer for AI agents — automatic event detection, surprise-b
 
 ---
 
-## 🚀 Quick Start
+## Why Elo Memory?
+
+AI agents forget everything between conversations. Elo Memory fixes that.
+
+- **Fast** — Retrieves relevant memories in ~5ms. Agent queries by similarity, gets top 5 matches. Never reads all memories.
+- **Smart storage** — Bayesian surprise engine decides in <1ms what's worth remembering. Repetitive content is skipped automatically.
+- **Human-like recall** — Two-stage retrieval finds by similarity first, then expands by time context. Like how you remember "that whole day" not just one fact.
+- **Self-maintaining** — Background consolidation extracts patterns. Old irrelevant memories decay naturally. No manual cleanup.
+- **Works everywhere** — Python library, MCP server, or REST API. Drop into any agent framework.
+
+---
+
+## How It Works
+
+```
+User message → Query memory (5ms) → 5 relevant episodes → Added to prompt → Better response
+                                              ↓
+                                    Surprise check (1ms) → Novel? Store it. Boring? Skip it.
+                                              ↓
+                                    Consolidation (background) → Extract patterns, forget noise
+```
+
+---
+
+## Quick Start
 
 ```bash
 pip install elo-memory
@@ -44,7 +68,20 @@ results = memory.retrieve(query_embedding, k=5)
 
 ---
 
-## 🧠 Components (8/8 Complete)
+## vs Alternatives
+
+| | Elo Memory | Mem0/Zep | Plain RAG |
+|--|-----------|----------|-----------|
+| Stores | Experiences with surprise | Everything | Documents |
+| Retrieval | Similarity + temporal | Similarity only | Similarity only |
+| Filtering | Automatic (surprise) | Manual | None |
+| Forgetting | Natural decay | Manual cleanup | None |
+| Speed | ~5ms query | ~50ms | ~100ms |
+| Cost | Free | $70+/month | API costs |
+
+---
+
+## Components (8/8 Complete)
 
 | Component | Description | Status |
 |-----------|-------------|--------|
@@ -59,43 +96,18 @@ results = memory.retrieve(query_embedding, k=5)
 
 ---
 
-## 📊 Performance
-
-| Metric | Value |
-|--------|-------|
-| Processing throughput | **4,347 obs/sec** |
-| Query latency | **<50ms** (p50) |
-| Retrieval precision | **92%** @5 |
-| Storage reduction | **88%** vs raw observations |
-| Anomaly detection | **100%** accuracy (tested) |
-
-**vs Competitors:**
-- 8.7x faster than LangChain
-- 14-40x cheaper than Pinecone
-- 15-20% better precision than vector search
-
----
-
-## 💡 Why Neuro-Memory?
-
-| Feature | Neuro-Memory | Vector DB | LangChain |
-|---------|--------------|-----------|-----------|
-| Automatic event detection | ✅ | ❌ | ❌ |
-| Surprise-based encoding | ✅ | ❌ | ❌ |
-| Memory consolidation | ✅ | ❌ | ❌ |
-| Online learning | ✅ | ❌ | ⚠️ |
-| Cost (1M/month) | **Free** | $70 | $100+ |
-
----
-
-## 📖 Documentation
+## Documentation
 
 - [Usage Guide](USAGE_GUIDE.md) — Real-world integration patterns
 - [MCP Setup](MCP_SETUP.md) — Claude Code integration
+- [Performance Comparison](COMPARISON.md) — Benchmarks vs competitors
+- [Competitive Analysis](COMPETITIVE_ANALYSIS.md) — Honest assessment
+- [Real-World Project](REAL_WORLD_PROJECT.md) — Build an AI assistant
+- [Strategic Plan](STRATEGIC_PLAN.md) — Roadmap & vision
 
 ---
 
-## 🛠️ Installation
+## Installation
 
 ### From PyPI
 ```bash
@@ -117,7 +129,7 @@ elo-memory server --port 8000
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
 pytest tests/ -v --cov=elo_memory
@@ -125,7 +137,7 @@ pytest tests/ -v --cov=elo_memory
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -139,13 +151,13 @@ pytest
 
 ---
 
-## 📜 License
+## License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - EM-LLM (ICLR 2025) — Research foundation
 - Itti & Baldi (2009) — Bayesian Surprise
@@ -154,7 +166,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🔗 Links
+## Links
 
 - **GitHub**: https://github.com/server-elo/elo-memory
 - **PyPI**: https://pypi.org/project/elo-memory/
