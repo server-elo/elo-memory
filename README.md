@@ -10,6 +10,8 @@
 
 The missing memory layer for AI agents — automatic event detection, surprise-based encoding, and human-like memory consolidation.
 
+**🤖 Works with:** OpenClaw | Claude Code | OpenCode | Codex | Claude | Any MCP-compatible agent
+
 ---
 
 ## 🚀 Quick Start
