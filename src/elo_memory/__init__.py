@@ -14,7 +14,7 @@
   14 | License: MIT
   15 | """
   16 | 
-  17 | __version__ = "0.1.2"
+  17 | __version__ = "0.1.4"
   18 | __author__ = "Lorenc Ndoj, Elvi Zekaj"
   19 | __license__ = "MIT"
   20 | 

@@ -11,10 +11,6 @@ Demonstrates the full pipeline:
 Simulates a day in the life of an AI agent with episodic memory.
 """
 
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-
 import numpy as np
 from datetime import datetime, timedelta
 
