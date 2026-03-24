@@ -1,15 +1,19 @@
-# Contributing to Neuro-Memory-Agent
+# Contributing to Elo Memory
 
 Thank you for your interest in contributing! This document provides guidelines for contributing to the project.
+
+## Contributors
+
+- **Lorenc Ndoj** - Original author
+- **Elvi Zekaj** - Core contributor
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/neuro-memory-agent.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/elo-memory.git`
 3. Create a virtual environment: `python -m venv venv`
 4. Activate it: `source venv/bin/activate` (Linux/Mac) or `venv\Scripts\activate` (Windows)
-5. Install dependencies: `pip install -r requirements.txt`
-6. Install dev dependencies: `pip install pytest black flake8`
+5. Install dependencies: `pip install -e ".[dev]"`
 
 ## Development Workflow
 
