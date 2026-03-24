@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 ## Contributors
 
 - **Lorenc Ndoj** - Original author
-- **Elvi Zekaj** - Core contributor
+- **Elvi Zekaj** - Co-author
 
 ## Getting Started
 
