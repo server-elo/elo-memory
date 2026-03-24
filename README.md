@@ -1,4 +1,4 @@
-# Neuro-Memory-Agent
+# Elo Memory
 
 [![PyPI version](https://badge.fury.io/py/elo-memory.svg)](https://badge.fury.io/py/elo-memory)
 [![Python 3.9+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
