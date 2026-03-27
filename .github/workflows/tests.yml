@@ -27,6 +27,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
+    - name: Debug import
+      run: |
+        python -c "from elo_memory.memory.episodic_store import EpisodicMemoryStore; print('Import OK')"
+        python -c "from elo_memory.surprise.bayesian_surprise import BayesianSurpriseEngine; print('Import OK')"
+    
     - name: Lint with flake8
       run: |
         flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -42,7 +47,7 @@ jobs:
     
     - name: Test with pytest
       run: |
-        pytest tests/ -v --cov=elo_memory --cov-report=xml
+        pytest tests/ -v --tb=long
     
     - name: Upload coverage
       uses: codecov/codecov-action@v4
