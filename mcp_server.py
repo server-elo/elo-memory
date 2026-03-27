@@ -22,7 +22,7 @@ import numpy as np
 # Try to load sentence-transformers for embedding generation
 try:
     from sentence_transformers import SentenceTransformer
-    EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
+    EMBEDDING_MODEL = SentenceTransformer('BAAI/bge-small-en-v1.5')
     EMBEDDING_DIM = 384
 except ImportError:
     EMBEDDING_MODEL = None

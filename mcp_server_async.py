@@ -161,6 +161,56 @@ class AsyncNeuroMemoryMCP:
         # Async embedding client
         self.embedding_client = AsyncEmbeddingClient()
 
+        # Schedule backfill of missing embeddings (runs after event loop starts)
+        self._backfill_scheduled = True
+
+    async def _backfill_embeddings(self):
+        """Re-embed episodes that are missing from ChromaDB and sync."""
+        if not self._backfill_scheduled:
+            return
+        self._backfill_scheduled = False
+
+        existing_ids = set()
+        if self.memory.collection.count() > 0:
+            existing_ids = set(self.memory.collection.get()["ids"])
+
+        missing = [ep for ep in self.memory.episodes if ep.episode_id not in existing_ids]
+        if not missing:
+            return
+
+        print(f"[neuro-memory] Backfilling {len(missing)} episodes into ChromaDB...", file=sys.stderr)
+
+        # Episodes with embeddings just need ChromaDB sync
+        have_emb = [ep for ep in missing if ep.embedding is not None]
+        need_emb = [ep for ep in missing if ep.embedding is None]
+
+        for ep in have_emb:
+            self.memory._add_to_vector_db(ep)
+
+        # Episodes without embeddings need re-embedding
+        if need_emb:
+            texts = []
+            for ep in need_emb:
+                content = ep.content
+                if isinstance(content, dict):
+                    texts.append(content.get("text", str(content)))
+                elif isinstance(content, np.ndarray):
+                    texts.append(str(content.tolist()))
+                else:
+                    texts.append(str(content))
+
+            batch_size = 100
+            for i in range(0, len(need_emb), batch_size):
+                try:
+                    embeddings = await self.embedding_client.get_embeddings_batch(texts[i:i + batch_size])
+                    for ep, emb in zip(need_emb[i:i + batch_size], embeddings):
+                        ep.embedding = emb
+                        self.memory._add_to_vector_db(ep)
+                except Exception as e:
+                    print(f"[neuro-memory] Backfill batch {i} failed: {e}", file=sys.stderr)
+
+        print(f"[neuro-memory] Backfill complete. ChromaDB: {self.memory.collection.count()} episodes.", file=sys.stderr)
+
     async def get_embedding(self, content: str, provided_embedding: Optional[List[float]] = None) -> np.ndarray:
         """Get embedding (async, non-blocking)"""
         if provided_embedding is not None:
@@ -360,6 +410,10 @@ class AsyncMCPServer:
     async def run(self):
         """Main async server loop"""
         await self.initialize()
+
+        # Backfill missing embeddings in the background
+        if self.mcp and getattr(self.mcp, '_backfill_scheduled', False):
+            asyncio.ensure_future(self.mcp._backfill_embeddings())
 
         loop = asyncio.get_event_loop()
 

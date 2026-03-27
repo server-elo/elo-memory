@@ -26,7 +26,6 @@ import json
 import pickle
 from pathlib import Path
 import chromadb
-from chromadb.config import Settings
 
 
 @dataclass
@@ -98,6 +97,9 @@ class EpisodicMemoryConfig:
     offload_threshold: int = 8000  # Start offloading when this many episodes
     importance_decay: float = 0.99  # Decay factor for episode importance
     consolidation_interval: int = 100  # Consolidate every N new episodes
+    consolidation_interval_episodes: int = 500  # Consolidate every N new episodes (hybrid)
+    consolidation_interval_hours: float = 8.0  # OR every N hours (whichever first)
+    consolidation_min_episodes: int = 100  # Minimum episodes before first consolidation
     vector_db_backend: str = "chromadb"  # "chromadb" or "faiss"
     persistence_path: Optional[str] = "./memory_store"  # Path for persistent storage
 
@@ -118,27 +120,40 @@ class EpisodicMemoryStore:
         Args:
             config: Memory configuration
         """
+        from .forgetting import ForgettingEngine
+        from .interference import InterferenceResolver
+        from ..online_learning import OnlineLearner
+
         self.config = config or EpisodicMemoryConfig()
-        
+
         # In-memory episode storage (hot storage)
         self.episodes: List[Episode] = []
-        
+
         # Temporal index: timestamp -> episode_ids
         self.temporal_index: Dict[str, List[str]] = {}
-        
+
         # Spatial index: location -> episode_ids
         self.spatial_index: Dict[str, List[str]] = {}
-        
+
         # Entity index: entity -> episode_ids
         self.entity_index: Dict[str, List[str]] = {}
-        
+
         # Statistics
         self.total_episodes_stored = 0
         self.episodes_offloaded = 0
-        
+
+        # Consolidation tracking (hybrid time + count)
+        self.last_consolidation_time: Optional[datetime] = None
+        self.episodes_since_consolidation: int = 0
+
+        # Bio-inspired components
+        self.forgetting = ForgettingEngine()
+        self.interference = InterferenceResolver()
+        self.online_learner = OnlineLearner()
+
         # Initialize vector database
         self._initialize_vector_db()
-        
+
         # Setup persistence
         if self.config.persistence_path:
             self.persistence_path = Path(self.config.persistence_path)
@@ -147,12 +162,10 @@ class EpisodicMemoryStore:
     def _initialize_vector_db(self):
         """Initialize vector database for similarity search."""
         if self.config.vector_db_backend == "chromadb":
-            # Initialize ChromaDB
+            # Initialize ChromaDB with persistent storage
             if self.config.persistence_path:
-                self.chroma_client = chromadb.Client(Settings(
-                    persist_directory=str(Path(self.config.persistence_path) / "chroma"),
-                    anonymized_telemetry=False
-                ))
+                chroma_path = str(Path(self.config.persistence_path) / "chroma")
+                self.chroma_client = chromadb.PersistentClient(path=chroma_path)
             else:
                 self.chroma_client = chromadb.Client()
             
@@ -205,23 +218,41 @@ class EpisodicMemoryStore:
         # Generate embedding if not provided
         if episode.embedding is None:
             episode.embedding = self._generate_embedding(content)
-        
+
+        # Interference resolution: orthogonalize similar embeddings
+        if episode.embedding is not None and len(self.episodes) > 0:
+            existing_embeddings = [
+                ep.embedding for ep in self.episodes[-100:]  # Check last 100 for speed
+                if ep.embedding is not None
+            ]
+            if existing_embeddings:
+                episode.embedding, _ = self.interference.resolve_interference_set(
+                    episode.embedding, existing_embeddings
+                )
+
         # Add to in-memory storage
         self.episodes.append(episode)
-        
+
         # Update indices
         self._update_indices(episode)
-        
+
         # Add to vector database
         self._add_to_vector_db(episode)
-        
+
         # Update statistics
         self.total_episodes_stored += 1
-        
-        # Check if consolidation/offloading needed
-        if len(self.episodes) >= self.config.offload_threshold:
+
+        # Online learning: update adaptive thresholds and replay buffer
+        self.online_learner.online_update(
+            episode.embedding if episode.embedding is not None else np.zeros(self.config.embedding_dim),
+            surprise,
+        )
+
+        # Check if consolidation/offloading needed (hybrid time + count)
+        self.episodes_since_consolidation += 1
+        if self.should_consolidate():
             self._consolidate_memory()
-        
+
         return episode
     
     def _compute_importance(self, surprise: float) -> float:
@@ -238,7 +269,30 @@ class EpisodicMemoryStore:
         # Sigmoid transformation of surprise
         importance = 1.0 / (1.0 + np.exp(-surprise + 2.0))
         return np.clip(importance, 0.0, 1.0)
-    
+
+    def should_consolidate(self) -> bool:
+        """Check if consolidation should run (hybrid time + count)."""
+        if len(self.episodes) < self.config.consolidation_min_episodes:
+            return False
+        if self.episodes_since_consolidation >= self.config.consolidation_interval_episodes:
+            return True
+        if self.last_consolidation_time is not None:
+            hours_since = (datetime.now() - self.last_consolidation_time).total_seconds() / 3600
+            if hours_since >= self.config.consolidation_interval_hours:
+                return True
+        if self.last_consolidation_time is None and len(self.episodes) >= self.config.consolidation_min_episodes:
+            first_ep_time = self.episodes[0].timestamp if self.episodes else None
+            if first_ep_time:
+                hours_since_first = (datetime.now() - first_ep_time).total_seconds() / 3600
+                if hours_since_first >= self.config.consolidation_interval_hours:
+                    return True
+        return False
+
+    def mark_consolidated(self):
+        """Mark consolidation as complete, reset counters."""
+        self.last_consolidation_time = datetime.now()
+        self.episodes_since_consolidation = 0
+
     def _generate_embedding(self, content: np.ndarray) -> np.ndarray:
         """
         Generate vector embedding for content.
@@ -296,8 +350,8 @@ class EpisodicMemoryStore:
                     "timestamp": episode.timestamp.isoformat(),
                     "location": episode.location or "",
                     "entities": ",".join(episode.entities),
-                    "surprise": float(episode.surprise),
-                    "importance": float(episode.importance),
+                    "surprise": episode.surprise,
+                    "importance": episode.importance
                 }]
             )
     
@@ -332,8 +386,21 @@ class EpisodicMemoryStore:
         # Retrieve full episodes
         episode_ids = results['ids'][0] if results['ids'] else []
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
-        
-        return [ep for ep in episodes if ep is not None]
+        episodes = [ep for ep in episodes if ep is not None]
+
+        # Apply forgetting: re-rank by activation (decayed importance)
+        # Rehearsal count tracks how many times an episode was retrieved
+        for ep in episodes:
+            retrieval_count = ep.metadata.get("_retrieval_count", 0)
+            ep.metadata["_retrieval_count"] = retrieval_count + 1
+            ep.metadata["_activation"] = self.forgetting.compute_activation(
+                ep.importance, ep.timestamp, rehearsal_count=retrieval_count,
+            )
+
+        # Sort by activation (highest first) so decayed memories rank lower
+        episodes.sort(key=lambda ep: ep.metadata.get("_activation", 0), reverse=True)
+
+        return episodes
     
     def retrieve_by_temporal_range(
         self,
@@ -382,6 +449,35 @@ class EpisodicMemoryStore:
         
         return None
     
+    def run_consolidation(self) -> Optional[Dict]:
+        """
+        Run a full consolidation cycle: replay, schema extraction, importance decay.
+        Call this periodically (e.g., every 60 minutes) regardless of episode count.
+        Returns consolidation stats or None if skipped.
+        """
+        from ..consolidation.memory_consolidation import MemoryConsolidationEngine
+        if not hasattr(self, "_consolidation_engine"):
+            self._consolidation_engine = MemoryConsolidationEngine()
+
+        if not self.episodes:
+            return None
+
+        # Apply forgetting decay to all episodes
+        for ep in self.episodes:
+            ep.metadata["_activation"] = self.forgetting.compute_activation(
+                ep.importance, ep.timestamp,
+                rehearsal_count=ep.metadata.get("_retrieval_count", 0),
+            )
+
+        # Run consolidation (replay + schema extraction)
+        def _strengthen(ep):
+            """Rehearsal callback: boost importance of replayed episodes."""
+            ep.importance = min(1.0, ep.importance * 1.1)
+            ep.metadata["_retrieval_count"] = ep.metadata.get("_retrieval_count", 0) + 1
+
+        stats = self._consolidation_engine.consolidate(self.episodes, update_callback=_strengthen)
+        return stats
+
     def _consolidate_memory(self):
         """
         Consolidate memory by offloading low-importance episodes to disk.
@@ -406,7 +502,9 @@ class EpisodicMemoryStore:
             for episode in episodes_to_offload:
                 self._offload_episode(episode)
                 self.episodes_offloaded += 1
-    
+
+        self.mark_consolidated()
+
     def _offload_episode(self, episode: Episode):
         """Offload episode to disk storage."""
         if not self.persistence_path:
@@ -443,7 +541,9 @@ class EpisodicMemoryStore:
             "spatial_index": self.spatial_index,
             "entity_index": self.entity_index,
             "total_episodes_stored": self.total_episodes_stored,
-            "episodes_offloaded": self.episodes_offloaded
+            "episodes_offloaded": self.episodes_offloaded,
+            "last_consolidation_time": self.last_consolidation_time.isoformat() if self.last_consolidation_time else None,
+            "episodes_since_consolidation": self.episodes_since_consolidation,
         }
         
         state_file = self.persistence_path / "memory_state.json"
@@ -458,28 +558,42 @@ class EpisodicMemoryStore:
         """Load memory state from disk."""
         if not self.persistence_path:
             return
-        
+
         state_file = self.persistence_path / "memory_state.json"
         if not state_file.exists():
             return
-        
+
         with open(state_file, 'r') as f:
             state = json.load(f)
-        
+
         # Restore episodes
         self.episodes = [Episode.from_dict(ep_dict) for ep_dict in state["episodes"]]
-        
+
         # Restore indices
         self.temporal_index = state["temporal_index"]
         self.spatial_index = state["spatial_index"]
         self.entity_index = state["entity_index"]
-        
+
         # Restore statistics
         self.total_episodes_stored = state["total_episodes_stored"]
         self.episodes_offloaded = state["episodes_offloaded"]
+
+        # Restore consolidation tracking
+        last_consolidation_iso = state.get("last_consolidation_time")
+        self.last_consolidation_time = datetime.fromisoformat(last_consolidation_iso) if last_consolidation_iso else None
+        self.episodes_since_consolidation = state.get("episodes_since_consolidation", 0)
+
+        # Sync episodes into ChromaDB that aren't already persisted there.
+        existing_ids = set()
+        if self.collection.count() > 0:
+            existing_ids = set(self.collection.get()["ids"])
+        for ep in self.episodes:
+            if ep.episode_id not in existing_ids and ep.embedding is not None:
+                self._add_to_vector_db(ep)
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get memory statistics."""
+        learner_stats = self.online_learner.get_statistics()
         return {
             "total_episodes": self.total_episodes_stored,
             "episodes_in_memory": len(self.episodes),
@@ -487,7 +601,12 @@ class EpisodicMemoryStore:
             "unique_locations": len(self.spatial_index),
             "unique_entities": len(self.entity_index),
             "temporal_span_days": len(self.temporal_index),
-            "mean_importance": np.mean([ep.importance for ep in self.episodes]) if self.episodes else 0.0
+            "mean_importance": np.mean([ep.importance for ep in self.episodes]) if self.episodes else 0.0,
+            "adaptive_surprise_threshold": learner_stats["surprise_threshold"],
+            "replay_buffer_size": learner_stats["replay_buffer_size"],
+            "total_online_updates": learner_stats["total_updates"],
+            "last_consolidation": self.last_consolidation_time.isoformat() if self.last_consolidation_time else None,
+            "episodes_since_consolidation": self.episodes_since_consolidation,
         }
 
 
