@@ -32,7 +32,7 @@ import chromadb
 class Episode:
     """
     Single episodic memory representing a specific event.
-    
+
     Attributes:
         content: The actual observation/experience
         timestamp: When the episode occurred
@@ -43,6 +43,7 @@ class Episode:
         importance: Consolidation priority score
         metadata: Additional contextual information
     """
+
     content: np.ndarray
     timestamp: datetime
     location: Optional[str] = None
@@ -52,28 +53,30 @@ class Episode:
     importance: float = 0.5
     metadata: Dict[str, Any] = field(default_factory=dict)
     episode_id: Optional[str] = None
-    
+
     def __post_init__(self):
         """Generate episode ID if not provided."""
         if self.episode_id is None:
             self.episode_id = f"ep_{self.timestamp.timestamp()}_{id(self)}"
-    
+
     def to_dict(self) -> Dict:
         """Convert episode to dictionary for serialization."""
         return {
             "episode_id": self.episode_id,
-            "content": self.content.tolist() if isinstance(self.content, np.ndarray) else self.content,
+            "content": (
+                self.content.tolist() if isinstance(self.content, np.ndarray) else self.content
+            ),
             "timestamp": self.timestamp.isoformat(),
             "location": self.location,
             "entities": self.entities,
             "embedding": self.embedding.tolist() if self.embedding is not None else None,
             "surprise": self.surprise,
             "importance": self.importance,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict) -> 'Episode':
+    def from_dict(cls, data: Dict) -> "Episode":
         """Reconstruct episode from dictionary."""
         return cls(
             content=np.array(data["content"]),
@@ -84,13 +87,14 @@ class Episode:
             surprise=data.get("surprise", 0.0),
             importance=data.get("importance", 0.5),
             metadata=data.get("metadata", {}),
-            episode_id=data.get("episode_id")
+            episode_id=data.get("episode_id"),
         )
 
 
 @dataclass
 class EpisodicMemoryConfig:
     """Configuration for episodic memory storage."""
+
     max_episodes: int = 10000  # Maximum episodes in hot storage
     embedding_dim: int = 512  # Dimension of episode embeddings
     enable_disk_offload: bool = True  # Offload old episodes to disk
@@ -107,14 +111,14 @@ class EpisodicMemoryConfig:
 class EpisodicMemoryStore:
     """
     Episodic memory storage with efficient retrieval and consolidation.
-    
+
     Mimics hippocampal episodic memory:
     - Fast single-shot encoding
     - Temporal-spatial indexing
     - Importance-based consolidation
     - Automatic capacity management
     """
-    
+
     def __init__(self, config: Optional[EpisodicMemoryConfig] = None):
         """
         Args:
@@ -158,7 +162,7 @@ class EpisodicMemoryStore:
         if self.config.persistence_path:
             self.persistence_path = Path(self.config.persistence_path)
             self.persistence_path.mkdir(parents=True, exist_ok=True)
-        
+
     def _initialize_vector_db(self):
         """Initialize vector database for similarity search."""
         if self.config.vector_db_backend == "chromadb":
@@ -168,16 +172,16 @@ class EpisodicMemoryStore:
                 self.chroma_client = chromadb.PersistentClient(path=chroma_path)
             else:
                 self.chroma_client = chromadb.Client()
-            
+
             # Create or get collection
             self.collection = self.chroma_client.get_or_create_collection(
                 name="episodic_memories",
-                metadata={"description": "Human-inspired episodic memory storage"}
+                metadata={"description": "Human-inspired episodic memory storage"},
             )
         else:
             # FAISS initialization (future implementation)
             raise NotImplementedError("FAISS backend not yet implemented")
-    
+
     def store_episode(
         self,
         content: np.ndarray,
@@ -186,11 +190,11 @@ class EpisodicMemoryStore:
         location: Optional[str] = None,
         entities: Optional[List[str]] = None,
         metadata: Optional[Dict] = None,
-        embedding: Optional[np.ndarray] = None
+        embedding: Optional[np.ndarray] = None,
     ) -> Episode:
         """
         Store a new episodic memory (single-shot learning).
-        
+
         Args:
             content: Observation content
             surprise: Surprise/novelty score from BayesianSurpriseEngine
@@ -199,7 +203,7 @@ class EpisodicMemoryStore:
             entities: Who/what was involved
             metadata: Additional context
             embedding: Pre-computed embedding (optional)
-            
+
         Returns:
             Created Episode object
         """
@@ -212,9 +216,9 @@ class EpisodicMemoryStore:
             embedding=embedding,
             surprise=surprise,
             importance=self._compute_importance(surprise),
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
-        
+
         # Generate embedding if not provided
         if episode.embedding is None:
             episode.embedding = self._generate_embedding(content)
@@ -222,7 +226,8 @@ class EpisodicMemoryStore:
         # Interference resolution: orthogonalize similar embeddings
         if episode.embedding is not None and len(self.episodes) > 0:
             existing_embeddings = [
-                ep.embedding for ep in self.episodes[-100:]  # Check last 100 for speed
+                ep.embedding
+                for ep in self.episodes[-100:]  # Check last 100 for speed
                 if ep.embedding is not None
             ]
             if existing_embeddings:
@@ -244,7 +249,11 @@ class EpisodicMemoryStore:
 
         # Online learning: update adaptive thresholds and replay buffer
         self.online_learner.online_update(
-            episode.embedding if episode.embedding is not None else np.zeros(self.config.embedding_dim),
+            (
+                episode.embedding
+                if episode.embedding is not None
+                else np.zeros(self.config.embedding_dim)
+            ),
             surprise,
         )
 
@@ -254,15 +263,15 @@ class EpisodicMemoryStore:
             self._consolidate_memory()
 
         return episode
-    
+
     def _compute_importance(self, surprise: float) -> float:
         """
         Compute importance score for episode.
         Higher surprise → higher importance → prioritized for consolidation.
-        
+
         Args:
             surprise: Surprise value from Bayesian surprise engine
-            
+
         Returns:
             Importance score [0, 1]
         """
@@ -280,7 +289,10 @@ class EpisodicMemoryStore:
             hours_since = (datetime.now() - self.last_consolidation_time).total_seconds() / 3600
             if hours_since >= self.config.consolidation_interval_hours:
                 return True
-        if self.last_consolidation_time is None and len(self.episodes) >= self.config.consolidation_min_episodes:
+        if (
+            self.last_consolidation_time is None
+            and len(self.episodes) >= self.config.consolidation_min_episodes
+        ):
             first_ep_time = self.episodes[0].timestamp if self.episodes else None
             if first_ep_time:
                 hours_since_first = (datetime.now() - first_ep_time).total_seconds() / 3600
@@ -297,10 +309,10 @@ class EpisodicMemoryStore:
         """
         Generate vector embedding for content.
         In production, use a pre-trained encoder (e.g., BERT, Sentence Transformers).
-        
+
         Args:
             content: Observation content
-            
+
         Returns:
             Embedding vector
         """
@@ -308,18 +320,18 @@ class EpisodicMemoryStore:
         if len(content) < self.config.embedding_dim:
             # Pad with zeros
             embedding = np.zeros(self.config.embedding_dim)
-            embedding[:len(content)] = content
+            embedding[: len(content)] = content
         else:
             # Use PCA-like projection (simplified)
-            embedding = content[:self.config.embedding_dim]
-        
+            embedding = content[: self.config.embedding_dim]
+
         # Normalize
         norm = np.linalg.norm(embedding)
         if norm > 0:
             embedding = embedding / norm
-        
+
         return embedding
-    
+
     def _update_indices(self, episode: Episode):
         """Update all indices with new episode."""
         # Temporal index (by date)
@@ -327,48 +339,47 @@ class EpisodicMemoryStore:
         if date_key not in self.temporal_index:
             self.temporal_index[date_key] = []
         self.temporal_index[date_key].append(episode.episode_id)
-        
+
         # Spatial index
         if episode.location:
             if episode.location not in self.spatial_index:
                 self.spatial_index[episode.location] = []
             self.spatial_index[episode.location].append(episode.episode_id)
-        
+
         # Entity index
         for entity in episode.entities:
             if entity not in self.entity_index:
                 self.entity_index[entity] = []
             self.entity_index[entity].append(episode.episode_id)
-    
+
     def _add_to_vector_db(self, episode: Episode):
         """Add episode to vector database for similarity search."""
         if self.config.vector_db_backend == "chromadb":
             self.collection.add(
                 ids=[episode.episode_id],
                 embeddings=[episode.embedding.tolist()],
-                metadatas=[{
-                    "timestamp": episode.timestamp.isoformat(),
-                    "location": episode.location or "",
-                    "entities": ",".join(episode.entities),
-                    "surprise": episode.surprise,
-                    "importance": episode.importance
-                }]
+                metadatas=[
+                    {
+                        "timestamp": episode.timestamp.isoformat(),
+                        "location": episode.location or "",
+                        "entities": ",".join(episode.entities),
+                        "surprise": episode.surprise,
+                        "importance": episode.importance,
+                    }
+                ],
             )
-    
+
     def retrieve_by_similarity(
-        self,
-        query_embedding: np.ndarray,
-        k: int = 10,
-        filter_criteria: Optional[Dict] = None
+        self, query_embedding: np.ndarray, k: int = 10, filter_criteria: Optional[Dict] = None
     ) -> List[Episode]:
         """
         Retrieve k most similar episodes by vector similarity.
-        
+
         Args:
             query_embedding: Query vector
             k: Number of episodes to retrieve
             filter_criteria: Optional filters (e.g., {"location": "office"})
-            
+
         Returns:
             List of similar episodes
         """
@@ -376,15 +387,13 @@ class EpisodicMemoryStore:
         where_clause = None
         if filter_criteria:
             where_clause = filter_criteria
-        
+
         results = self.collection.query(
-            query_embeddings=[query_embedding.tolist()],
-            n_results=k,
-            where=where_clause
+            query_embeddings=[query_embedding.tolist()], n_results=k, where=where_clause
         )
-        
+
         # Retrieve full episodes
-        episode_ids = results['ids'][0] if results['ids'] else []
+        episode_ids = results["ids"][0] if results["ids"] else []
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
         episodes = [ep for ep in episodes if ep is not None]
 
@@ -394,61 +403,59 @@ class EpisodicMemoryStore:
             retrieval_count = ep.metadata.get("_retrieval_count", 0)
             ep.metadata["_retrieval_count"] = retrieval_count + 1
             ep.metadata["_activation"] = self.forgetting.compute_activation(
-                ep.importance, ep.timestamp, rehearsal_count=retrieval_count,
+                ep.importance,
+                ep.timestamp,
+                rehearsal_count=retrieval_count,
             )
 
         # Sort by activation (highest first) so decayed memories rank lower
         episodes.sort(key=lambda ep: ep.metadata.get("_activation", 0), reverse=True)
 
         return episodes
-    
-    def retrieve_by_temporal_range(
-        self,
-        start_time: datetime,
-        end_time: datetime
-    ) -> List[Episode]:
+
+    def retrieve_by_temporal_range(self, start_time: datetime, end_time: datetime) -> List[Episode]:
         """
         Retrieve episodes within a time range.
-        
+
         Args:
             start_time: Start of time window
             end_time: End of time window
-            
+
         Returns:
             Episodes in time range
         """
         matching_episodes = []
-        
+
         for episode in self.episodes:
             if start_time <= episode.timestamp <= end_time:
                 matching_episodes.append(episode)
-        
+
         return matching_episodes
-    
+
     def retrieve_by_location(self, location: str) -> List[Episode]:
         """Retrieve all episodes at a specific location."""
         episode_ids = self.spatial_index.get(location, [])
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
         return [ep for ep in episodes if ep is not None]
-    
+
     def retrieve_by_entity(self, entity: str) -> List[Episode]:
         """Retrieve all episodes involving a specific entity."""
         episode_ids = self.entity_index.get(entity, [])
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
         return [ep for ep in episodes if ep is not None]
-    
+
     def _get_episode_by_id(self, episode_id: str) -> Optional[Episode]:
         """Retrieve episode by ID."""
         for episode in self.episodes:
             if episode.episode_id == episode_id:
                 return episode
-        
+
         # Check offloaded storage
         if self.config.enable_disk_offload:
             return self._load_offloaded_episode(episode_id)
-        
+
         return None
-    
+
     def run_consolidation(self) -> Optional[Dict]:
         """
         Run a full consolidation cycle: replay, schema extraction, importance decay.
@@ -456,6 +463,7 @@ class EpisodicMemoryStore:
         Returns consolidation stats or None if skipped.
         """
         from ..consolidation.memory_consolidation import MemoryConsolidationEngine
+
         if not hasattr(self, "_consolidation_engine"):
             self._consolidation_engine = MemoryConsolidationEngine()
 
@@ -465,7 +473,8 @@ class EpisodicMemoryStore:
         # Apply forgetting decay to all episodes
         for ep in self.episodes:
             ep.metadata["_activation"] = self.forgetting.compute_activation(
-                ep.importance, ep.timestamp,
+                ep.importance,
+                ep.timestamp,
                 rehearsal_count=ep.metadata.get("_retrieval_count", 0),
             )
 
@@ -485,20 +494,20 @@ class EpisodicMemoryStore:
         """
         if not self.config.enable_disk_offload:
             return
-        
+
         # Decay importance of all episodes
         for episode in self.episodes:
             episode.importance *= self.config.importance_decay
-        
+
         # Sort by importance
         self.episodes.sort(key=lambda ep: ep.importance, reverse=True)
-        
+
         # Offload bottom X% to disk
         n_to_offload = len(self.episodes) - self.config.max_episodes
         if n_to_offload > 0:
             episodes_to_offload = self.episodes[-n_to_offload:]
             self.episodes = self.episodes[:-n_to_offload]
-            
+
             for episode in episodes_to_offload:
                 self._offload_episode(episode)
                 self.episodes_offloaded += 1
@@ -509,31 +518,31 @@ class EpisodicMemoryStore:
         """Offload episode to disk storage."""
         if not self.persistence_path:
             return
-        
+
         offload_dir = self.persistence_path / "offloaded"
         offload_dir.mkdir(exist_ok=True)
-        
+
         file_path = offload_dir / f"{episode.episode_id}.pkl"
-        with open(file_path, 'wb') as f:
+        with open(file_path, "wb") as f:
             pickle.dump(episode, f)
-    
+
     def _load_offloaded_episode(self, episode_id: str) -> Optional[Episode]:
         """Load episode from disk storage."""
         if not self.persistence_path:
             return None
-        
+
         file_path = self.persistence_path / "offloaded" / f"{episode_id}.pkl"
         if file_path.exists():
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 return pickle.load(f)
-        
+
         return None
-    
+
     def save_state(self):
         """Save memory state to disk."""
         if not self.persistence_path:
             return
-        
+
         state = {
             "config": self.config.__dict__,
             "episodes": [ep.to_dict() for ep in self.episodes],
@@ -542,18 +551,21 @@ class EpisodicMemoryStore:
             "entity_index": self.entity_index,
             "total_episodes_stored": self.total_episodes_stored,
             "episodes_offloaded": self.episodes_offloaded,
-            "last_consolidation_time": self.last_consolidation_time.isoformat() if self.last_consolidation_time else None,
+            "last_consolidation_time": (
+                self.last_consolidation_time.isoformat() if self.last_consolidation_time else None
+            ),
             "episodes_since_consolidation": self.episodes_since_consolidation,
         }
-        
+
         state_file = self.persistence_path / "memory_state.json"
         tmp_file = self.persistence_path / "memory_state.json.tmp"
-        with open(tmp_file, 'w') as f:
+        with open(tmp_file, "w") as f:
             json.dump(state, f)
         # Atomic rename — prevents corruption if process is killed mid-write
         import os
+
         os.replace(str(tmp_file), str(state_file))
-    
+
     def load_state(self):
         """Load memory state from disk."""
         if not self.persistence_path:
@@ -563,7 +575,7 @@ class EpisodicMemoryStore:
         if not state_file.exists():
             return
 
-        with open(state_file, 'r') as f:
+        with open(state_file, "r") as f:
             state = json.load(f)
 
         # Restore episodes
@@ -580,7 +592,9 @@ class EpisodicMemoryStore:
 
         # Restore consolidation tracking
         last_consolidation_iso = state.get("last_consolidation_time")
-        self.last_consolidation_time = datetime.fromisoformat(last_consolidation_iso) if last_consolidation_iso else None
+        self.last_consolidation_time = (
+            datetime.fromisoformat(last_consolidation_iso) if last_consolidation_iso else None
+        )
         self.episodes_since_consolidation = state.get("episodes_since_consolidation", 0)
 
         # Sync episodes into ChromaDB that aren't already persisted there.
@@ -590,7 +604,7 @@ class EpisodicMemoryStore:
         for ep in self.episodes:
             if ep.episode_id not in existing_ids and ep.embedding is not None:
                 self._add_to_vector_db(ep)
-    
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get memory statistics."""
         learner_stats = self.online_learner.get_statistics()
@@ -601,22 +615,26 @@ class EpisodicMemoryStore:
             "unique_locations": len(self.spatial_index),
             "unique_entities": len(self.entity_index),
             "temporal_span_days": len(self.temporal_index),
-            "mean_importance": np.mean([ep.importance for ep in self.episodes]) if self.episodes else 0.0,
+            "mean_importance": (
+                np.mean([ep.importance for ep in self.episodes]) if self.episodes else 0.0
+            ),
             "adaptive_surprise_threshold": learner_stats["surprise_threshold"],
             "replay_buffer_size": learner_stats["replay_buffer_size"],
             "total_online_updates": learner_stats["total_updates"],
-            "last_consolidation": self.last_consolidation_time.isoformat() if self.last_consolidation_time else None,
+            "last_consolidation": (
+                self.last_consolidation_time.isoformat() if self.last_consolidation_time else None
+            ),
             "episodes_since_consolidation": self.episodes_since_consolidation,
         }
 
 
 if __name__ == "__main__":
     print("=== Episodic Memory Store Test ===\n")
-    
+
     # Initialize memory store
     config = EpisodicMemoryConfig(max_episodes=100, embedding_dim=128)
     memory = EpisodicMemoryStore(config)
-    
+
     # Store some episodes
     print("Storing episodes...")
     for i in range(50):
@@ -624,32 +642,32 @@ if __name__ == "__main__":
         surprise = np.random.rand() * 3.0  # Random surprise
         location = ["office", "home", "cafe"][i % 3]
         entities = [f"person_{i % 5}"]
-        
+
         episode = memory.store_episode(
             content=content,
             surprise=surprise,
             location=location,
             entities=entities,
-            metadata={"event": f"test_event_{i}"}
+            metadata={"event": f"test_event_{i}"},
         )
-    
+
     # Retrieve statistics
     stats = memory.get_statistics()
     print(f"\nMemory Statistics:")
     for key, value in stats.items():
         print(f"  {key}: {value}")
-    
+
     # Test similarity retrieval
     query = np.random.randn(128)
     similar_episodes = memory.retrieve_by_similarity(query, k=5)
     print(f"\nRetrieved {len(similar_episodes)} similar episodes")
-    
+
     # Test location retrieval
     office_episodes = memory.retrieve_by_location("office")
     print(f"Episodes at 'office': {len(office_episodes)}")
-    
+
     # Test entity retrieval
     person_0_episodes = memory.retrieve_by_entity("person_0")
     print(f"Episodes with 'person_0': {len(person_0_episodes)}")
-    
+
     print("\n✓ Episodic memory store test complete!")

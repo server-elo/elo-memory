@@ -30,6 +30,7 @@ from collections import defaultdict
 @dataclass
 class ConsolidationConfig:
     """Configuration for memory consolidation."""
+
     replay_batch_size: int = 32
     replay_iterations: int = 100
     prioritization_alpha: float = 0.6  # Priority exponent (0=uniform, 1=greedy)
@@ -66,9 +67,7 @@ class MemoryConsolidationEngine:
         return time_since_last >= self.config.consolidation_interval
 
     def prioritize_episodes(
-        self,
-        episodes: List,
-        priorities: Optional[np.ndarray] = None
+        self, episodes: List, priorities: Optional[np.ndarray] = None
     ) -> Tuple[List, np.ndarray]:
         """
         Prioritize episodes for replay based on surprise and recency.
@@ -88,7 +87,7 @@ class MemoryConsolidationEngine:
 
             for i, ep in enumerate(episodes):
                 # Surprise component
-                surprise_score = ep.surprise if hasattr(ep, 'surprise') else 1.0
+                surprise_score = ep.surprise if hasattr(ep, "surprise") else 1.0
 
                 # Recency component (more recent = higher priority)
                 time_diff = (now - ep.timestamp).total_seconds()
@@ -103,12 +102,7 @@ class MemoryConsolidationEngine:
 
         return episodes, probabilities
 
-    def sample_for_replay(
-        self,
-        episodes: List,
-        probabilities: np.ndarray,
-        batch_size: int
-    ) -> List:
+    def sample_for_replay(self, episodes: List, probabilities: np.ndarray, batch_size: int) -> List:
         """
         Sample episodes for replay using prioritized sampling.
 
@@ -125,18 +119,12 @@ class MemoryConsolidationEngine:
 
         # Sample without replacement
         indices = np.random.choice(
-            len(episodes),
-            size=min(batch_size, len(episodes)),
-            replace=False,
-            p=probabilities
+            len(episodes), size=min(batch_size, len(episodes)), replace=False, p=probabilities
         )
 
         return [episodes[i] for i in indices]
 
-    def extract_schemas(
-        self,
-        episodes: List
-    ) -> List[Dict]:
+    def extract_schemas(self, episodes: List) -> List[Dict]:
         """
         Extract common patterns (schemas) from episodes.
 
@@ -152,7 +140,7 @@ class MemoryConsolidationEngine:
         # Group episodes by location
         location_groups = defaultdict(list)
         for ep in episodes:
-            if hasattr(ep, 'location') and ep.location:
+            if hasattr(ep, "location") and ep.location:
                 location_groups[ep.location].append(ep)
 
         # Extract schemas from frequent patterns
@@ -162,40 +150,34 @@ class MemoryConsolidationEngine:
                 # Find common entities
                 entity_counts = defaultdict(int)
                 for ep in location_episodes:
-                    if hasattr(ep, 'entities'):
+                    if hasattr(ep, "entities"):
                         for entity in ep.entities:
                             entity_counts[entity] += 1
 
                 # Common entities appear in >50% of episodes
                 threshold = len(location_episodes) * 0.5
                 common_entities = [
-                    entity for entity, count in entity_counts.items()
-                    if count >= threshold
+                    entity for entity, count in entity_counts.items() if count >= threshold
                 ]
 
                 # Average surprise (schema importance)
-                avg_surprise = np.mean([
-                    ep.surprise if hasattr(ep, 'surprise') else 1.0
-                    for ep in location_episodes
-                ])
+                avg_surprise = np.mean(
+                    [ep.surprise if hasattr(ep, "surprise") else 1.0 for ep in location_episodes]
+                )
 
                 schema = {
-                    'type': 'location_pattern',
-                    'location': location,
-                    'common_entities': common_entities,
-                    'frequency': len(location_episodes),
-                    'avg_surprise': avg_surprise,
-                    'episode_ids': [ep.episode_id for ep in location_episodes]
+                    "type": "location_pattern",
+                    "location": location,
+                    "common_entities": common_entities,
+                    "frequency": len(location_episodes),
+                    "avg_surprise": avg_surprise,
+                    "episode_ids": [ep.episode_id for ep in location_episodes],
                 }
                 schemas.append(schema)
 
         return schemas
 
-    def consolidate(
-        self,
-        episodes: List,
-        update_callback: Optional[callable] = None
-    ) -> Dict:
+    def consolidate(self, episodes: List, update_callback: Optional[callable] = None) -> Dict:
         """
         Run full consolidation cycle.
 
@@ -220,9 +202,7 @@ class MemoryConsolidationEngine:
         for _ in range(self.config.replay_iterations):
             # Sample batch for replay
             replay_batch = self.sample_for_replay(
-                prioritized_episodes,
-                probabilities,
-                self.config.replay_batch_size
+                prioritized_episodes, probabilities, self.config.replay_batch_size
             )
 
             # Replay (strengthen representations)
@@ -242,11 +222,11 @@ class MemoryConsolidationEngine:
         self.last_consolidation = datetime.now()
 
         return {
-            'episodes_consolidated': len(prioritized_episodes),
-            'replay_count': replay_count,
-            'schemas_extracted': len(new_schemas),
-            'total_schemas': len(self.schemas),
-            'timestamp': self.last_consolidation
+            "episodes_consolidated": len(prioritized_episodes),
+            "replay_count": replay_count,
+            "schemas_extracted": len(new_schemas),
+            "total_schemas": len(self.schemas),
+            "timestamp": self.last_consolidation,
         }
 
     def get_schema_summary(self) -> List[Dict]:
@@ -254,11 +234,11 @@ class MemoryConsolidationEngine:
         summaries = []
         for schema in self.schemas:
             summary = {
-                'type': schema['type'],
-                'pattern': f"Location: {schema['location']}",
-                'frequency': schema['frequency'],
-                'common_entities': schema['common_entities'],
-                'importance': schema['avg_surprise']
+                "type": schema["type"],
+                "pattern": f"Location: {schema['location']}",
+                "frequency": schema["frequency"],
+                "common_entities": schema["common_entities"],
+                "importance": schema["avg_surprise"],
             }
             summaries.append(summary)
         return summaries
@@ -289,7 +269,7 @@ if __name__ == "__main__":
             location="conference_room",
             entities=["Alice", "Bob", "self"],
             surprise=2.0 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i)
+            timestamp=base_time + timedelta(hours=i),
         )
         episodes.append(ep)
 
@@ -300,7 +280,7 @@ if __name__ == "__main__":
             location="office",
             entities=["self"],
             surprise=0.5 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i, minutes=30)
+            timestamp=base_time + timedelta(hours=i, minutes=30),
         )
         episodes.append(ep)
 
@@ -311,7 +291,7 @@ if __name__ == "__main__":
             location="cafe",
             entities=["self", "Charlie"],
             surprise=1.0 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i + 12)
+            timestamp=base_time + timedelta(hours=i + 12),
         )
         episodes.append(ep)
 

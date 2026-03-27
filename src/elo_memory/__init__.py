@@ -29,15 +29,26 @@ try:
     from .online_learning import OnlineLearner, OnlineLearningConfig
 
     __all__ = [
-        "BayesianSurpriseEngine", "SurpriseConfig",
-        "EventSegmenter", "SegmentationConfig",
-        "EpisodicMemoryStore", "EpisodicMemoryConfig", "Episode",
-        "TwoStageRetriever", "RetrievalConfig",
-        "MemoryConsolidationEngine", "ConsolidationConfig",
-        "ForgettingEngine", "ForgettingConfig",
-        "InterferenceResolver", "InterferenceConfig",
-        "OnlineLearner", "OnlineLearningConfig",
-        "__version__", "__author__", "__license__",
+        "BayesianSurpriseEngine",
+        "SurpriseConfig",
+        "EventSegmenter",
+        "SegmentationConfig",
+        "EpisodicMemoryStore",
+        "EpisodicMemoryConfig",
+        "Episode",
+        "TwoStageRetriever",
+        "RetrievalConfig",
+        "MemoryConsolidationEngine",
+        "ConsolidationConfig",
+        "ForgettingEngine",
+        "ForgettingConfig",
+        "InterferenceResolver",
+        "InterferenceConfig",
+        "OnlineLearner",
+        "OnlineLearningConfig",
+        "__version__",
+        "__author__",
+        "__license__",
     ]
 except ImportError:
     __all__ = ["__version__", "__author__", "__license__"]

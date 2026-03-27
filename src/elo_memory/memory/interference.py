@@ -19,6 +19,7 @@ from dataclasses import dataclass
 @dataclass
 class InterferenceConfig:
     """Configuration for interference resolution."""
+
     similarity_threshold: float = 0.85  # When memories interfere
     separation_strength: float = 0.3  # How much to orthogonalize
     min_pattern_distance: float = 0.2  # Minimum separation
@@ -37,9 +38,7 @@ class InterferenceResolver:
         self.config = config or InterferenceConfig()
 
     def detect_interference(
-        self,
-        new_embedding: np.ndarray,
-        existing_embeddings: List[np.ndarray]
+        self, new_embedding: np.ndarray, existing_embeddings: List[np.ndarray]
     ) -> List[int]:
         """
         Detect which existing memories interfere with new memory.
@@ -61,9 +60,7 @@ class InterferenceResolver:
         return interfering_indices
 
     def apply_pattern_separation(
-        self,
-        new_embedding: np.ndarray,
-        interfering_embedding: np.ndarray
+        self, new_embedding: np.ndarray, interfering_embedding: np.ndarray
     ) -> np.ndarray:
         """
         Apply pattern separation to reduce interference.
@@ -97,10 +94,7 @@ class InterferenceResolver:
         return separated
 
     def pattern_complete(
-        self,
-        partial_cue: np.ndarray,
-        stored_patterns: List[np.ndarray],
-        threshold: float = 0.5
+        self, partial_cue: np.ndarray, stored_patterns: List[np.ndarray], threshold: float = 0.5
     ) -> Optional[np.ndarray]:
         """
         Complete partial memory cue using stored patterns.
@@ -125,9 +119,7 @@ class InterferenceResolver:
         return best_match
 
     def resolve_interference_set(
-        self,
-        new_embedding: np.ndarray,
-        existing_embeddings: List[np.ndarray]
+        self, new_embedding: np.ndarray, existing_embeddings: List[np.ndarray]
     ) -> Tuple[np.ndarray, List[np.ndarray]]:
         """
         Resolve interference for a new memory against existing set.
@@ -148,18 +140,11 @@ class InterferenceResolver:
         # Apply pattern separation
         separated_new = new_embedding.copy()
         for idx in interfering_indices:
-            separated_new = self.apply_pattern_separation(
-                separated_new,
-                existing_embeddings[idx]
-            )
+            separated_new = self.apply_pattern_separation(separated_new, existing_embeddings[idx])
 
         return separated_new, existing_embeddings
 
-    def _cosine_similarity(
-        self,
-        vec1: np.ndarray,
-        vec2: np.ndarray
-    ) -> float:
+    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Compute cosine similarity."""
         dot_product = np.dot(vec1, vec2)
         norm1 = np.linalg.norm(vec1)
@@ -192,7 +177,9 @@ if __name__ == "__main__":
     memory3 = memory3 / np.linalg.norm(memory3)
 
     print("Memory similarities:")
-    print(f"  memory1 vs memory2: {resolver._cosine_similarity(memory1, memory2):.3f} (interfering)")
+    print(
+        f"  memory1 vs memory2: {resolver._cosine_similarity(memory1, memory2):.3f} (interfering)"
+    )
     print(f"  memory1 vs memory3: {resolver._cosine_similarity(memory1, memory3):.3f} (separate)\n")
 
     # Detect interference
@@ -213,7 +200,11 @@ if __name__ == "__main__":
 
     if completed is not None:
         print("Pattern completion:")
-        print(f"  Partial cue similarity to memory1: {resolver._cosine_similarity(partial, memory1):.3f}")
-        print(f"  Completed pattern similarity to memory1: {resolver._cosine_similarity(completed, memory1):.3f}")
+        print(
+            f"  Partial cue similarity to memory1: {resolver._cosine_similarity(partial, memory1):.3f}"
+        )
+        print(
+            f"  Completed pattern similarity to memory1: {resolver._cosine_similarity(completed, memory1):.3f}"
+        )
 
     print("\n✓ Interference resolution test complete!")

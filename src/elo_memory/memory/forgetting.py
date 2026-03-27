@@ -20,6 +20,7 @@ from dataclasses import dataclass
 @dataclass
 class ForgettingConfig:
     """Configuration for memory forgetting."""
+
     decay_rate: float = 0.5  # How fast memories decay
     rehearsal_boost: float = 1.5  # Strength multiplier on rehearsal
     min_activation: float = 0.1  # Minimum activation threshold
@@ -44,7 +45,7 @@ class ForgettingEngine:
         initial_activation: float,
         timestamp: datetime,
         rehearsal_count: int = 0,
-        current_time: datetime = None
+        current_time: datetime = None,
     ) -> float:
         """
         Compute current memory activation.
@@ -62,7 +63,7 @@ class ForgettingEngine:
         time_elapsed = (current_time - timestamp).total_seconds() / 3600  # hours
 
         # Apply rehearsal boost
-        boosted_activation = initial_activation * (self.config.rehearsal_boost ** rehearsal_count)
+        boosted_activation = initial_activation * (self.config.rehearsal_boost**rehearsal_count)
 
         # Apply decay
         if self.config.use_power_law:
@@ -74,10 +75,7 @@ class ForgettingEngine:
 
         return max(activation, self.config.min_activation)
 
-    def should_forget(
-        self,
-        activation: float
-    ) -> bool:
+    def should_forget(self, activation: float) -> bool:
         """
         Determine if memory should be forgotten.
 
@@ -89,10 +87,7 @@ class ForgettingEngine:
         """
         return activation < self.config.min_activation
 
-    def get_forgetting_probability(
-        self,
-        activation: float
-    ) -> float:
+    def get_forgetting_probability(self, activation: float) -> float:
         """
         Probability of forgetting given activation.
 
@@ -123,8 +118,9 @@ if __name__ == "__main__":
     print("Activation decay over time:")
     for hours in [0, 1, 6, 12, 24, 48, 72, 168]:  # 0h to 1 week
         test_time = timestamp + timedelta(hours=hours)
-        activation = engine.compute_activation(initial_activation, timestamp,
-                                               rehearsal_count=0, current_time=test_time)
+        activation = engine.compute_activation(
+            initial_activation, timestamp, rehearsal_count=0, current_time=test_time
+        )
         forget_prob = engine.get_forgetting_probability(activation)
 
         print(f"  After {hours:3d}h: activation={activation:.3f}, forget_prob={forget_prob:.3f}")
@@ -133,8 +129,9 @@ if __name__ == "__main__":
     print("\nEffect of rehearsal (after 24 hours):")
     test_time = timestamp + timedelta(hours=24)
     for rehearsals in range(5):
-        activation = engine.compute_activation(initial_activation, timestamp,
-                                               rehearsal_count=rehearsals, current_time=test_time)
+        activation = engine.compute_activation(
+            initial_activation, timestamp, rehearsal_count=rehearsals, current_time=test_time
+        )
         print(f"  {rehearsals} rehearsals: activation={activation:.3f}")
 
     print("\n✓ Forgetting test complete!")

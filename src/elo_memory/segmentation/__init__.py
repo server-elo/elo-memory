@@ -5,7 +5,7 @@ from .event_segmenter import (
     SegmentationConfig,
     HiddenMarkovEventDetector,
     PredictionErrorDetector,
-    GraphBoundaryRefiner
+    GraphBoundaryRefiner,
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "SegmentationConfig",
     "HiddenMarkovEventDetector",
     "PredictionErrorDetector",
-    "GraphBoundaryRefiner"
+    "GraphBoundaryRefiner",
 ]

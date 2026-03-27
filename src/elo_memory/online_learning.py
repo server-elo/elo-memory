@@ -20,6 +20,7 @@ from collections import deque
 @dataclass
 class OnlineLearningConfig:
     """Configuration for online learning."""
+
     learning_rate: float = 0.01  # Base learning rate
     ewc_lambda: float = 0.5  # EWC regularization strength
     replay_buffer_size: int = 1000  # Max replay samples
@@ -56,10 +57,7 @@ class OnlineLearner:
         self.replay_count = 0
 
     def add_to_replay_buffer(
-        self,
-        observation: np.ndarray,
-        surprise: float,
-        metadata: Optional[Dict] = None
+        self, observation: np.ndarray, surprise: float, metadata: Optional[Dict] = None
     ):
         """
         Add observation to replay buffer.
@@ -76,30 +74,28 @@ class OnlineLearner:
 
         # Reservoir sampling with priority
         if len(self.replay_buffer) < self.config.replay_buffer_size:
-            self.replay_buffer.append({
-                'observation': observation,
-                'surprise': surprise,
-                'priority': priority,
-                'metadata': metadata or {}
-            })
+            self.replay_buffer.append(
+                {
+                    "observation": observation,
+                    "surprise": surprise,
+                    "priority": priority,
+                    "metadata": metadata or {},
+                }
+            )
         else:
             # Replace lowest priority sample if new one is more important
             min_priority_idx = min(
-                range(len(self.replay_buffer)),
-                key=lambda i: self.replay_buffer[i]['priority']
+                range(len(self.replay_buffer)), key=lambda i: self.replay_buffer[i]["priority"]
             )
-            if priority > self.replay_buffer[min_priority_idx]['priority']:
+            if priority > self.replay_buffer[min_priority_idx]["priority"]:
                 self.replay_buffer[min_priority_idx] = {
-                    'observation': observation,
-                    'surprise': surprise,
-                    'priority': priority,
-                    'metadata': metadata or {}
+                    "observation": observation,
+                    "surprise": surprise,
+                    "priority": priority,
+                    "metadata": metadata or {},
                 }
 
-    def sample_replay_batch(
-        self,
-        batch_size: Optional[int] = None
-    ) -> List[Dict]:
+    def sample_replay_batch(self, batch_size: Optional[int] = None) -> List[Dict]:
         """
         Sample batch from replay buffer for rehearsal.
 
@@ -115,24 +111,17 @@ class OnlineLearner:
             return []
 
         # Sample with priority (higher surprise = higher probability)
-        priorities = np.array([exp['priority'] for exp in self.replay_buffer])
+        priorities = np.array([exp["priority"] for exp in self.replay_buffer])
         probabilities = priorities / np.sum(priorities)
 
         sample_size = min(batch_size, len(self.replay_buffer))
         indices = np.random.choice(
-            len(self.replay_buffer),
-            size=sample_size,
-            replace=False,
-            p=probabilities
+            len(self.replay_buffer), size=sample_size, replace=False, p=probabilities
         )
 
         return [self.replay_buffer[i] for i in indices]
 
-    def update_adaptive_threshold(
-        self,
-        current_value: float,
-        threshold_type: str = 'surprise'
-    ):
+    def update_adaptive_threshold(self, current_value: float, threshold_type: str = "surprise"):
         """
         Update adaptive threshold using exponential moving average.
 
@@ -145,23 +134,15 @@ class OnlineLearner:
 
         alpha = self.config.threshold_alpha
 
-        if threshold_type == 'surprise':
+        if threshold_type == "surprise":
             # Update surprise threshold
-            self.surprise_threshold = (
-                (1 - alpha) * self.surprise_threshold +
-                alpha * current_value
-            )
-        elif threshold_type == 'novelty':
+            self.surprise_threshold = (1 - alpha) * self.surprise_threshold + alpha * current_value
+        elif threshold_type == "novelty":
             # Update novelty threshold
-            self.novelty_threshold = (
-                (1 - alpha) * self.novelty_threshold +
-                alpha * current_value
-            )
+            self.novelty_threshold = (1 - alpha) * self.novelty_threshold + alpha * current_value
 
     def compute_ewc_loss(
-        self,
-        current_params: Dict[str, np.ndarray],
-        old_params: Dict[str, np.ndarray]
+        self, current_params: Dict[str, np.ndarray], old_params: Dict[str, np.ndarray]
     ) -> float:
         """
         Compute Elastic Weight Consolidation loss.
@@ -182,15 +163,11 @@ class OnlineLearner:
                 # L2 penalty weighted by Fisher information
                 param_diff = current_params[param_name] - old_params[param_name]
                 fisher = self.fisher_information[param_name]
-                ewc_loss += np.sum(fisher * (param_diff ** 2))
+                ewc_loss += np.sum(fisher * (param_diff**2))
 
         return self.config.ewc_lambda * ewc_loss / 2.0
 
-    def update_fisher_information(
-        self,
-        param_name: str,
-        gradient: np.ndarray
-    ):
+    def update_fisher_information(self, param_name: str, gradient: np.ndarray):
         """
         Update Fisher information matrix estimate.
 
@@ -204,16 +181,12 @@ class OnlineLearner:
             self.fisher_information[param_name] = np.zeros_like(gradient)
 
         # Running average of squared gradients
-        self.fisher_information[param_name] = (
-            0.9 * self.fisher_information[param_name] +
-            0.1 * (gradient ** 2)
+        self.fisher_information[param_name] = 0.9 * self.fisher_information[param_name] + 0.1 * (
+            gradient**2
         )
 
     def online_update(
-        self,
-        observation: np.ndarray,
-        surprise: float,
-        update_fn: Optional[Callable] = None
+        self, observation: np.ndarray, surprise: float, update_fn: Optional[Callable] = None
     ):
         """
         Perform online update with experience replay and EWC.
@@ -227,7 +200,7 @@ class OnlineLearner:
         self.add_to_replay_buffer(observation, surprise)
 
         # Update adaptive threshold
-        self.update_adaptive_threshold(surprise, 'surprise')
+        self.update_adaptive_threshold(surprise, "surprise")
 
         # Perform model update (if update function provided)
         if update_fn is not None:
@@ -238,7 +211,7 @@ class OnlineLearner:
             replay_batch = self.sample_replay_batch()
             for exp in replay_batch:
                 if update_fn is not None:
-                    update_fn(exp['observation'])
+                    update_fn(exp["observation"])
             self.replay_count += len(replay_batch)
 
         self.total_updates += 1
@@ -246,12 +219,12 @@ class OnlineLearner:
     def get_statistics(self) -> Dict:
         """Get online learning statistics."""
         return {
-            'total_updates': self.total_updates,
-            'replay_count': self.replay_count,
-            'replay_buffer_size': len(self.replay_buffer),
-            'surprise_threshold': self.surprise_threshold,
-            'novelty_threshold': self.novelty_threshold,
-            'fisher_params': len(self.fisher_information)
+            "total_updates": self.total_updates,
+            "replay_count": self.replay_count,
+            "replay_buffer_size": len(self.replay_buffer),
+            "surprise_threshold": self.surprise_threshold,
+            "novelty_threshold": self.novelty_threshold,
+            "fisher_params": len(self.fisher_information),
         }
 
 
@@ -288,7 +261,7 @@ if __name__ == "__main__":
     # Test replay sampling
     print(f"\nReplay Buffer Statistics:")
     replay_batch = learner.sample_replay_batch(10)
-    surprises = [exp['surprise'] for exp in replay_batch]
+    surprises = [exp["surprise"] for exp in replay_batch]
     print(f"  Sampled batch size: {len(replay_batch)}")
     print(f"  Mean surprise in batch: {np.mean(surprises):.3f}")
     print(f"  Max surprise in batch: {np.max(surprises):.3f}")
