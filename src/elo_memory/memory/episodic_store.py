@@ -238,7 +238,7 @@ class EpisodicMemoryStore:
         if episode.embedding is not None and len(self.episodes) > 0:
             existing_embeddings = [
                 ep.embedding
-                for ep in self.episodes[-self.config.interference_check_window:]
+                for ep in self.episodes[-self.config.interference_check_window :]
                 if ep.embedding is not None
             ]
             if existing_embeddings:
@@ -631,6 +631,7 @@ class EpisodicMemoryStore:
                 json.dump(state, f)
             # Atomic rename — prevents corruption if process is killed mid-write
             import os
+
             os.replace(str(tmp_file), str(state_file))
         except Exception as e:
             logger.error("Failed to save state: %s", e)

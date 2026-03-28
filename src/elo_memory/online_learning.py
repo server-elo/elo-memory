@@ -187,9 +187,9 @@ class OnlineLearner:
 
         # Running average of squared gradients
         decay = self.config.fisher_ema_decay
-        self.fisher_information[param_name] = decay * self.fisher_information[param_name] + (1 - decay) * (
-            gradient**2
-        )
+        self.fisher_information[param_name] = decay * self.fisher_information[param_name] + (
+            1 - decay
+        ) * (gradient**2)
 
     def online_update(
         self, observation: np.ndarray, surprise: float, update_fn: Optional[Callable] = None

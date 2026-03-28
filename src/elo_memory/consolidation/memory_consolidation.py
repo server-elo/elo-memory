@@ -37,7 +37,9 @@ class ConsolidationConfig:
     importance_beta: float = 0.4  # Importance sampling correction
     schema_threshold: int = 3  # Min occurrences to form schema
     consolidation_interval: timedelta = timedelta(hours=8)  # Sleep cycle
-    common_entity_ratio: float = 0.5  # Entity must appear in this fraction of episodes to be "common"
+    common_entity_ratio: float = (
+        0.5  # Entity must appear in this fraction of episodes to be "common"
+    )
 
 
 class MemoryConsolidationEngine:
