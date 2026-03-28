@@ -14,9 +14,16 @@ Implements EM-LLM (ICLR 2025) with 8 core components:
 License: MIT
 """
 
+import logging
+
 __version__ = "0.1.8"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
 __license__ = "MIT"
+
+# Package-level logger. Defaults to NullHandler (silent) per Python best practice.
+# Users can configure via: logging.getLogger("elo_memory").setLevel(logging.DEBUG)
+logger = logging.getLogger("elo_memory")
+logger.addHandler(logging.NullHandler())
 
 try:
     from .surprise.bayesian_surprise import BayesianSurpriseEngine, SurpriseConfig

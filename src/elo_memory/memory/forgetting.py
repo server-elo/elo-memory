@@ -25,6 +25,7 @@ class ForgettingConfig:
     rehearsal_boost: float = 1.5  # Strength multiplier on rehearsal
     min_activation: float = 0.1  # Minimum activation threshold
     use_power_law: bool = True  # Use power law vs exponential decay
+    forgetting_steepness: float = 5.0  # Sigmoid steepness for forgetting probability
 
 
 class ForgettingEngine:
@@ -99,7 +100,7 @@ class ForgettingEngine:
         """
         # Sigmoid function around min_activation threshold
         x = (activation - self.config.min_activation) / self.config.min_activation
-        prob = 1 / (1 + np.exp(x * 5))  # Steepness = 5
+        prob = 1 / (1 + np.exp(x * self.config.forgetting_steepness))
         return prob
 
 

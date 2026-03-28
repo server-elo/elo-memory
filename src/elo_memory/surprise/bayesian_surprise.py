@@ -35,6 +35,11 @@ class SurpriseConfig:
     use_adaptive_threshold: bool = True  # Adapt threshold based on surprise distribution
     min_observations: int = 10  # Minimum observations before calculating surprise
     smoothing_alpha: float = 0.1  # Exponential moving average smoothing
+    hidden_dim: int = 256  # LSTM hidden dimension for predictive model
+    num_layers: int = 2  # LSTM layer count for predictive model
+    learning_rate: float = 0.001  # Optimizer learning rate for predictive model
+    surprise_history_len: int = 100  # Window for adaptive threshold statistics
+    observation_noise: float = 0.1  # Assumed observation variance for Bayesian update
 
 
 class PredictiveModel(nn.Module):
@@ -109,14 +114,20 @@ class BayesianSurpriseEngine:
         self.config = config or SurpriseConfig()
 
         # Predictive model for next-state estimation
-        self.predictive_model = PredictiveModel(input_dim)
-        self.optimizer = torch.optim.Adam(self.predictive_model.parameters(), lr=0.001)
+        self.predictive_model = PredictiveModel(
+            input_dim,
+            hidden_dim=self.config.hidden_dim,
+            num_layers=self.config.num_layers,
+        )
+        self.optimizer = torch.optim.Adam(
+            self.predictive_model.parameters(), lr=self.config.learning_rate
+        )
 
         # Observation history (sliding window for prior estimation)
         self.observation_history = deque(maxlen=self.config.window_size)
 
         # Surprise history for adaptive thresholding
-        self.surprise_history = deque(maxlen=100)
+        self.surprise_history = deque(maxlen=self.config.surprise_history_len)
 
         # Running statistics
         self.step_count = 0
@@ -234,7 +245,7 @@ class BayesianSurpriseEngine:
             posterior_var: Updated variance [input_dim]
         """
         # Assume observation noise (likelihood variance)
-        obs_var = 0.1 * np.ones_like(observation)
+        obs_var = self.config.observation_noise * np.ones_like(observation)
 
         # Bayesian update for Gaussian-Gaussian conjugate prior
         # Posterior precision = Prior precision + Observation precision
@@ -265,6 +276,12 @@ class BayesianSurpriseEngine:
                 - is_novel: Boolean indicating if surprise exceeds threshold
                 - threshold: Current threshold value
         """
+        observation = np.asarray(observation, dtype=np.float64)
+        if observation.shape != (self.input_dim,):
+            raise ValueError(
+                f"Observation shape {observation.shape} does not match input_dim ({self.input_dim},)"
+            )
+
         # Get prior distribution from history
         prior_mean, prior_var = self.get_prior_distribution()
 

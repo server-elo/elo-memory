@@ -19,13 +19,8 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import sys
-from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from memory.episodic_store import Episode, EpisodicMemoryStore
+from ..memory.episodic_store import Episode, EpisodicMemoryStore
 
 
 @dataclass
@@ -44,6 +39,9 @@ class RetrievalConfig:
     similarity_weight: float = 0.6  # Weight for similarity score
     recency_weight: float = 0.2  # Weight for recency
     importance_weight: float = 0.2  # Weight for importance
+
+    # Decay
+    recency_decay_hours: float = 24.0  # Time constant for recency exponential decay
 
     # Final selection
     max_retrieved: int = 10  # Maximum episodes to return
@@ -92,6 +90,10 @@ class TwoStageRetriever:
         Returns:
             List of (episode, score) tuples, sorted by relevance
         """
+        if query is None:
+            raise ValueError("query must be a numpy array, got None")
+        query = np.asarray(query)
+
         query_time = query_time or datetime.now()
 
         # Stage 1: Similarity-based retrieval
@@ -196,7 +198,7 @@ class TwoStageRetriever:
 
             # 2. Recency score (exponential decay)
             time_diff = (query_time - episode.timestamp).total_seconds()
-            recency = np.exp(-time_diff / (24 * 3600))  # Decay over days
+            recency = np.exp(-time_diff / (self.config.recency_decay_hours * 3600))
 
             # 3. Importance score (already normalized)
             importance = episode.importance
@@ -302,7 +304,7 @@ if __name__ == "__main__":
     print("=== Two-Stage Retriever Test ===\n")
 
     # Import and setup memory store
-    from memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig
+    from elo_memory.memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig
 
     # Initialize
     memory_config = EpisodicMemoryConfig(embedding_dim=128)
