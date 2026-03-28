@@ -23,6 +23,7 @@ class InterferenceConfig:
     similarity_threshold: float = 0.85  # When memories interfere
     separation_strength: float = 0.3  # How much to orthogonalize
     min_pattern_distance: float = 0.2  # Minimum separation
+    separation_noise_scale: float = 0.1  # Noise added when patterns are too similar
 
 
 class InterferenceResolver:
@@ -87,7 +88,7 @@ class InterferenceResolver:
         similarity = self._cosine_similarity(separated, interfering_embedding)
         if similarity > (1 - self.config.min_pattern_distance):
             # Add random noise to increase separation
-            noise = np.random.randn(len(separated)) * 0.1
+            noise = np.random.randn(len(separated)) * self.config.separation_noise_scale
             separated = separated + noise
             separated = separated / (np.linalg.norm(separated) + 1e-8)
 

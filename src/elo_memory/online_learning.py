@@ -27,6 +27,7 @@ class OnlineLearningConfig:
     replay_batch_size: int = 32  # Samples per replay
     adaptive_threshold: bool = True  # Adjust thresholds online
     threshold_alpha: float = 0.1  # Threshold update rate
+    fisher_ema_decay: float = 0.9  # EMA decay for Fisher information updates
 
 
 class OnlineLearner:
@@ -112,7 +113,11 @@ class OnlineLearner:
 
         # Sample with priority (higher surprise = higher probability)
         priorities = np.array([exp["priority"] for exp in self.replay_buffer])
-        probabilities = priorities / np.sum(priorities)
+        total = np.sum(priorities)
+        if total == 0 or not np.isfinite(total):
+            probabilities = np.ones(len(priorities)) / len(priorities)
+        else:
+            probabilities = priorities / total
 
         sample_size = min(batch_size, len(self.replay_buffer))
         indices = np.random.choice(
@@ -181,7 +186,8 @@ class OnlineLearner:
             self.fisher_information[param_name] = np.zeros_like(gradient)
 
         # Running average of squared gradients
-        self.fisher_information[param_name] = 0.9 * self.fisher_information[param_name] + 0.1 * (
+        decay = self.config.fisher_ema_decay
+        self.fisher_information[param_name] = decay * self.fisher_information[param_name] + (1 - decay) * (
             gradient**2
         )
 

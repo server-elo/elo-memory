@@ -37,6 +37,7 @@ class ConsolidationConfig:
     importance_beta: float = 0.4  # Importance sampling correction
     schema_threshold: int = 3  # Min occurrences to form schema
     consolidation_interval: timedelta = timedelta(hours=8)  # Sleep cycle
+    common_entity_ratio: float = 0.5  # Entity must appear in this fraction of episodes to be "common"
 
 
 class MemoryConsolidationEngine:
@@ -155,7 +156,7 @@ class MemoryConsolidationEngine:
                             entity_counts[entity] += 1
 
                 # Common entities appear in >50% of episodes
-                threshold = len(location_episodes) * 0.5
+                threshold = len(location_episodes) * self.config.common_entity_ratio
                 common_entities = [
                     entity for entity, count in entity_counts.items() if count >= threshold
                 ]
