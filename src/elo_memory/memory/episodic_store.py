@@ -18,14 +18,18 @@ Key Features:
 5. Automatic memory consolidation and pruning
 """
 
+import logging
+from collections import OrderedDict
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import pickle
 from pathlib import Path
 import chromadb
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,7 +48,7 @@ class Episode:
         metadata: Additional contextual information
     """
 
-    content: np.ndarray
+    content: Union[np.ndarray, Dict[str, Any]]
     timestamp: datetime
     location: Optional[str] = None
     entities: List[str] = field(default_factory=list)
@@ -106,6 +110,8 @@ class EpisodicMemoryConfig:
     consolidation_min_episodes: int = 100  # Minimum episodes before first consolidation
     vector_db_backend: str = "chromadb"  # "chromadb" or "faiss"
     persistence_path: Optional[str] = "./memory_store"  # Path for persistent storage
+    interference_check_window: int = 100  # Recent episodes to check for interference
+    query_cache_size: int = 128  # LRU cache size for similarity queries (0 to disable)
 
 
 class EpisodicMemoryStore:
@@ -155,6 +161,10 @@ class EpisodicMemoryStore:
         self.interference = InterferenceResolver()
         self.online_learner = OnlineLearner()
 
+        # LRU cache for similarity queries: cache_key -> list of episode_ids
+        self._query_cache: OrderedDict[str, List[str]] = OrderedDict()
+        self._query_cache_max = self.config.query_cache_size
+
         # Initialize vector database
         self._initialize_vector_db()
 
@@ -165,26 +175,27 @@ class EpisodicMemoryStore:
 
     def _initialize_vector_db(self):
         """Initialize vector database for similarity search."""
+        self.collection = None
         if self.config.vector_db_backend == "chromadb":
-            # Initialize ChromaDB with persistent storage
-            if self.config.persistence_path:
-                chroma_path = str(Path(self.config.persistence_path) / "chroma")
-                self.chroma_client = chromadb.PersistentClient(path=chroma_path)
-            else:
-                self.chroma_client = chromadb.Client()
+            try:
+                if self.config.persistence_path:
+                    chroma_path = str(Path(self.config.persistence_path) / "chroma")
+                    self.chroma_client = chromadb.PersistentClient(path=chroma_path)
+                else:
+                    self.chroma_client = chromadb.Client()
 
-            # Create or get collection
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="episodic_memories",
-                metadata={"description": "Human-inspired episodic memory storage"},
-            )
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="episodic_memories",
+                    metadata={"description": "Human-inspired episodic memory storage"},
+                )
+            except Exception as e:
+                logger.error("ChromaDB initialization failed, vector search disabled: %s", e)
         else:
-            # FAISS initialization (future implementation)
             raise NotImplementedError("FAISS backend not yet implemented")
 
     def store_episode(
         self,
-        content: np.ndarray,
+        content: Union[np.ndarray, Dict[str, Any]],
         surprise: float = 0.0,
         timestamp: Optional[datetime] = None,
         location: Optional[str] = None,
@@ -196,7 +207,7 @@ class EpisodicMemoryStore:
         Store a new episodic memory (single-shot learning).
 
         Args:
-            content: Observation content
+            content: Observation content (ndarray or dict with "text" key)
             surprise: Surprise/novelty score from BayesianSurpriseEngine
             timestamp: When this happened (defaults to now)
             location: Where this happened
@@ -227,7 +238,7 @@ class EpisodicMemoryStore:
         if episode.embedding is not None and len(self.episodes) > 0:
             existing_embeddings = [
                 ep.embedding
-                for ep in self.episodes[-100:]  # Check last 100 for speed
+                for ep in self.episodes[-self.config.interference_check_window :]
                 if ep.embedding is not None
             ]
             if existing_embeddings:
@@ -243,6 +254,9 @@ class EpisodicMemoryStore:
 
         # Add to vector database
         self._add_to_vector_db(episode)
+
+        # Invalidate query cache — new episode changes similarity results
+        self._query_cache.clear()
 
         # Update statistics
         self.total_episodes_stored += 1
@@ -305,17 +319,27 @@ class EpisodicMemoryStore:
         self.last_consolidation_time = datetime.now()
         self.episodes_since_consolidation = 0
 
-    def _generate_embedding(self, content: np.ndarray) -> np.ndarray:
+    def _generate_embedding(self, content: Union[np.ndarray, Dict[str, Any]]) -> np.ndarray:
         """
         Generate vector embedding for content.
         In production, use a pre-trained encoder (e.g., BERT, Sentence Transformers).
 
         Args:
-            content: Observation content
+            content: Observation content (ndarray or dict)
 
         Returns:
             Embedding vector
         """
+        # Convert dict content to array via simple hash
+        if isinstance(content, dict):
+            text = content.get("text", str(content))
+            arr = np.zeros(self.config.embedding_dim)
+            for i, char in enumerate(text):
+                idx = (ord(char) * (i + 1)) % self.config.embedding_dim
+                arr[idx] += np.sin(ord(char) * 0.1) * 0.5
+            norm = np.linalg.norm(arr)
+            return arr / norm if norm > 0 else arr
+
         # Simple projection for now (replace with real encoder)
         if len(content) < self.config.embedding_dim:
             # Pad with zeros
@@ -354,7 +378,9 @@ class EpisodicMemoryStore:
 
     def _add_to_vector_db(self, episode: Episode):
         """Add episode to vector database for similarity search."""
-        if self.config.vector_db_backend == "chromadb":
+        if self.collection is None:
+            return
+        try:
             self.collection.add(
                 ids=[episode.episode_id],
                 embeddings=[episode.embedding.tolist()],
@@ -368,6 +394,8 @@ class EpisodicMemoryStore:
                     }
                 ],
             )
+        except Exception as e:
+            logger.warning("Failed to add episode %s to vector DB: %s", episode.episode_id, e)
 
     def retrieve_by_similarity(
         self, query_embedding: np.ndarray, k: int = 10, filter_criteria: Optional[Dict] = None
@@ -383,17 +411,52 @@ class EpisodicMemoryStore:
         Returns:
             List of similar episodes
         """
+        if self.collection is None:
+            return []
+
+        # LRU cache lookup (skip cache when filters are used — too many key combos)
+        cache_key = None
+        if self._query_cache_max > 0 and filter_criteria is None:
+            cache_key = f"{query_embedding.tobytes().hex()[:32]}:k={k}"
+            if cache_key in self._query_cache:
+                self._query_cache.move_to_end(cache_key)
+                cached_ids = self._query_cache[cache_key]
+                episodes = [self._get_episode_by_id(eid) for eid in cached_ids]
+                episodes = [ep for ep in episodes if ep is not None]
+                # Still apply forgetting/activation below
+                for ep in episodes:
+                    retrieval_count = ep.metadata.get("_retrieval_count", 0)
+                    ep.metadata["_retrieval_count"] = retrieval_count + 1
+                    ep.metadata["_activation"] = self.forgetting.compute_activation(
+                        ep.importance,
+                        ep.timestamp,
+                        rehearsal_count=retrieval_count,
+                    )
+                episodes.sort(key=lambda ep: ep.metadata.get("_activation", 0), reverse=True)
+                return episodes
+
         # Query vector database
         where_clause = None
         if filter_criteria:
             where_clause = filter_criteria
 
-        results = self.collection.query(
-            query_embeddings=[query_embedding.tolist()], n_results=k, where=where_clause
-        )
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding.tolist()], n_results=k, where=where_clause
+            )
+        except Exception as e:
+            logger.warning("Vector DB query failed: %s", e)
+            return []
 
         # Retrieve full episodes
         episode_ids = results["ids"][0] if results["ids"] else []
+
+        # Populate cache
+        if cache_key is not None:
+            self._query_cache[cache_key] = episode_ids
+            if len(self._query_cache) > self._query_cache_max:
+                self._query_cache.popitem(last=False)  # evict oldest
+
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
         episodes = [ep for ep in episodes if ep is not None]
 
@@ -518,13 +581,14 @@ class EpisodicMemoryStore:
         """Offload episode to disk storage."""
         if not self.persistence_path:
             return
-
-        offload_dir = self.persistence_path / "offloaded"
-        offload_dir.mkdir(exist_ok=True)
-
-        file_path = offload_dir / f"{episode.episode_id}.pkl"
-        with open(file_path, "wb") as f:
-            pickle.dump(episode, f)
+        try:
+            offload_dir = self.persistence_path / "offloaded"
+            offload_dir.mkdir(exist_ok=True)
+            file_path = offload_dir / f"{episode.episode_id}.pkl"
+            with open(file_path, "wb") as f:
+                pickle.dump(episode, f)
+        except Exception as e:
+            logger.error("Failed to offload episode %s: %s", episode.episode_id, e)
 
     def _load_offloaded_episode(self, episode_id: str) -> Optional[Episode]:
         """Load episode from disk storage."""
@@ -533,8 +597,11 @@ class EpisodicMemoryStore:
 
         file_path = self.persistence_path / "offloaded" / f"{episode_id}.pkl"
         if file_path.exists():
-            with open(file_path, "rb") as f:
-                return pickle.load(f)
+            try:
+                with open(file_path, "rb") as f:
+                    return pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load offloaded episode %s: %s", episode_id, e)
 
         return None
 
@@ -559,12 +626,15 @@ class EpisodicMemoryStore:
 
         state_file = self.persistence_path / "memory_state.json"
         tmp_file = self.persistence_path / "memory_state.json.tmp"
-        with open(tmp_file, "w") as f:
-            json.dump(state, f)
-        # Atomic rename — prevents corruption if process is killed mid-write
-        import os
+        try:
+            with open(tmp_file, "w") as f:
+                json.dump(state, f)
+            # Atomic rename — prevents corruption if process is killed mid-write
+            import os
 
-        os.replace(str(tmp_file), str(state_file))
+            os.replace(str(tmp_file), str(state_file))
+        except Exception as e:
+            logger.error("Failed to save state: %s", e)
 
     def load_state(self):
         """Load memory state from disk."""
@@ -575,35 +645,48 @@ class EpisodicMemoryStore:
         if not state_file.exists():
             return
 
-        with open(state_file, "r") as f:
-            state = json.load(f)
+        try:
+            with open(state_file, "r") as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error("Failed to load state file %s: %s", state_file, e)
+            return
 
-        # Restore episodes
-        self.episodes = [Episode.from_dict(ep_dict) for ep_dict in state["episodes"]]
+        try:
+            # Restore episodes
+            self.episodes = [Episode.from_dict(ep_dict) for ep_dict in state["episodes"]]
 
-        # Restore indices
-        self.temporal_index = state["temporal_index"]
-        self.spatial_index = state["spatial_index"]
-        self.entity_index = state["entity_index"]
+            # Restore indices
+            self.temporal_index = state["temporal_index"]
+            self.spatial_index = state["spatial_index"]
+            self.entity_index = state["entity_index"]
 
-        # Restore statistics
-        self.total_episodes_stored = state["total_episodes_stored"]
-        self.episodes_offloaded = state["episodes_offloaded"]
+            # Restore statistics
+            self.total_episodes_stored = state["total_episodes_stored"]
+            self.episodes_offloaded = state["episodes_offloaded"]
 
-        # Restore consolidation tracking
-        last_consolidation_iso = state.get("last_consolidation_time")
-        self.last_consolidation_time = (
-            datetime.fromisoformat(last_consolidation_iso) if last_consolidation_iso else None
-        )
-        self.episodes_since_consolidation = state.get("episodes_since_consolidation", 0)
+            # Restore consolidation tracking
+            last_consolidation_iso = state.get("last_consolidation_time")
+            self.last_consolidation_time = (
+                datetime.fromisoformat(last_consolidation_iso) if last_consolidation_iso else None
+            )
+            self.episodes_since_consolidation = state.get("episodes_since_consolidation", 0)
+        except (KeyError, TypeError, ValueError) as e:
+            logger.error("Corrupted state data, starting fresh: %s", e)
+            self.episodes = []
+            return
 
         # Sync episodes into ChromaDB that aren't already persisted there.
-        existing_ids = set()
-        if self.collection.count() > 0:
-            existing_ids = set(self.collection.get()["ids"])
-        for ep in self.episodes:
-            if ep.episode_id not in existing_ids and ep.embedding is not None:
-                self._add_to_vector_db(ep)
+        if self.collection is not None:
+            try:
+                existing_ids = set()
+                if self.collection.count() > 0:
+                    existing_ids = set(self.collection.get()["ids"])
+                for ep in self.episodes:
+                    if ep.episode_id not in existing_ids and ep.embedding is not None:
+                        self._add_to_vector_db(ep)
+            except Exception as e:
+                logger.warning("ChromaDB sync during load failed: %s", e)
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get memory statistics."""
@@ -625,6 +708,8 @@ class EpisodicMemoryStore:
                 self.last_consolidation_time.isoformat() if self.last_consolidation_time else None
             ),
             "episodes_since_consolidation": self.episodes_since_consolidation,
+            "query_cache_entries": len(self._query_cache),
+            "query_cache_max": self._query_cache_max,
         }
 
 

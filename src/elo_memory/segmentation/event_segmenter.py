@@ -17,6 +17,7 @@ Key Algorithms:
 3. Graph Modularity: Optimize event boundaries for within-event coherence
 """
 
+import logging
 import numpy as np
 from typing import List, Optional, Tuple, Dict
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from collections import deque
 import networkx as nx
 from scipy.stats import norm
 from sklearn.cluster import AgglomerativeClustering
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,7 +88,7 @@ class HiddenMarkovEventDetector:
             return boundaries
 
         except Exception as e:
-            print(f"HMM fitting failed: {e}")
+            logger.warning("HMM fitting failed, falling back to clustering: %s", e)
             # Fallback to simple clustering
             return self._fallback_clustering(observations)
 
