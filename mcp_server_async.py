@@ -10,7 +10,9 @@ Performance:
 
 import asyncio
 import json
+import logging
 import sys
+import time as _time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -24,17 +26,40 @@ from elo_memory.memory import EpisodicMemoryStore, EpisodicMemoryConfig
 from elo_memory.retrieval import TwoStageRetriever
 from elo_memory.consolidation import MemoryConsolidationEngine
 
+logger = logging.getLogger("elo_memory.mcp_async")
+
 # Try to load sentence-transformers for local embedding generation
-try:
-    from sentence_transformers import SentenceTransformer
-    EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
-    EMBEDDING_DIM = 384
+EMBEDDING_MODEL = None
+EMBEDDING_DIM = 768  # fallback default
+LOCAL_EMBEDDINGS = False
+
+
+def _load_embedding_model(model_name: str = 'all-MiniLM-L6-v2', retries: int = 3):
+    """Load SentenceTransformer with retries for network/disk failures."""
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        logger.warning("sentence-transformers not installed, using HTTP embeddings")
+        return None
+
+    for attempt in range(1, retries + 1):
+        try:
+            model = SentenceTransformer(model_name)
+            return model
+        except Exception as e:
+            logger.warning("Embedding model load attempt %d/%d failed: %s", attempt, retries, e)
+            if attempt < retries:
+                _time.sleep(2 ** attempt)
+    logger.warning("All embedding model load attempts failed, using HTTP embeddings")
+    return None
+
+
+EMBEDDING_MODEL = _load_embedding_model()
+if EMBEDDING_MODEL is not None:
+    EMBEDDING_DIM = EMBEDDING_MODEL.get_sentence_embedding_dimension()
     LOCAL_EMBEDDINGS = True
-except ImportError:
-    EMBEDDING_MODEL = None
-    EMBEDDING_DIM = 768
-    LOCAL_EMBEDDINGS = False
-    print("Warning: sentence-transformers not available, using HTTP embeddings", file=sys.stderr)
+else:
+    logger.info("Using HTTP embeddings (dim=%d)", EMBEDDING_DIM)
 
 
 class AsyncEmbeddingClient:
@@ -93,7 +118,7 @@ class AsyncEmbeddingClient:
                 data = await response.json()
                 return np.array(data['data'][0]['embedding'])
         except Exception as e:
-            print(f"Warning: HTTP embedding failed, using hash fallback: {e}", file=sys.stderr)
+            logger.warning("HTTP embedding failed, using hash fallback: %s", e)
             return self._hash_embedding(text)
 
     async def get_embeddings_batch(self, texts: List[str]) -> List[np.ndarray]:
@@ -152,9 +177,9 @@ class AsyncNeuroMemoryMCP:
         # Load previous state from disk
         try:
             self.memory.load_state()
-            print(f"Loaded {len(self.memory.episodes)} episodes from disk", file=sys.stderr)
+            logger.info("Loaded %d episodes from disk", len(self.memory.episodes))
         except Exception as e:
-            print(f"No previous state to load: {e}", file=sys.stderr)
+            logger.debug("No previous state to load: %s", e)
         self.retriever = TwoStageRetriever(self.memory)
         self.consolidation = MemoryConsolidationEngine()
 
@@ -178,7 +203,7 @@ class AsyncNeuroMemoryMCP:
         if not missing:
             return
 
-        print(f"[neuro-memory] Backfilling {len(missing)} episodes into ChromaDB...", file=sys.stderr)
+        logger.info("Backfilling %d episodes into ChromaDB", len(missing))
 
         # Episodes with embeddings just need ChromaDB sync
         have_emb = [ep for ep in missing if ep.embedding is not None]
@@ -207,14 +232,19 @@ class AsyncNeuroMemoryMCP:
                         ep.embedding = emb
                         self.memory._add_to_vector_db(ep)
                 except Exception as e:
-                    print(f"[neuro-memory] Backfill batch {i} failed: {e}", file=sys.stderr)
+                    logger.error("Backfill batch %d failed: %s", i, e)
 
-        print(f"[neuro-memory] Backfill complete. ChromaDB: {self.memory.collection.count()} episodes.", file=sys.stderr)
+        logger.info("Backfill complete. ChromaDB: %d episodes", self.memory.collection.count())
 
     async def get_embedding(self, content: str, provided_embedding: Optional[List[float]] = None) -> np.ndarray:
-        """Get embedding (async, non-blocking)"""
+        """Get embedding (async, non-blocking)."""
         if provided_embedding is not None:
-            return np.array(provided_embedding)
+            emb = np.array(provided_embedding, dtype=np.float32)
+            if emb.shape != (self.input_dim,):
+                raise ValueError(
+                    f"Embedding dimension mismatch: got {emb.shape[0]}, expected {self.input_dim}"
+                )
+            return emb
 
         return await self.embedding_client.get_embedding(content)
 
@@ -225,11 +255,13 @@ class AsyncNeuroMemoryMCP:
         metadata: Dict = None
     ) -> Dict:
         """Store a new memory episode (async) — always stores, always saves to disk"""
+        if not content or not isinstance(content, str):
+            raise ValueError("content must be a non-empty string")
         embedding_array = await self.get_embedding(content, embedding)
 
         # Compute surprise (for scoring, not gating)
         surprise_info = self.surprise_engine.compute_surprise(embedding_array)
-        surprise_val = float(surprise_info['surprise'])  # convert numpy float32 → Python float
+        surprise_val = float(surprise_info['surprise'])
 
         # Always store — every conversation matters
         episode = self.memory.store_episode(
@@ -243,13 +275,13 @@ class AsyncNeuroMemoryMCP:
         try:
             self.memory.save_state()
         except Exception as e:
-            print(f"Disk save failed: {e}", file=sys.stderr)
+            logger.error("Disk save failed: %s", e)
 
         return {
             "stored": True,
-            "episode_id": str(getattr(episode, 'id', id(episode))),
-            "surprise": surprise_info['surprise'],
-            "is_novel": surprise_info['is_novel']
+            "episode_id": episode.episode_id,
+            "surprise": surprise_val,
+            "is_novel": bool(surprise_info['is_novel'])
         }
 
     async def batch_store_memories(
@@ -260,6 +292,8 @@ class AsyncNeuroMemoryMCP:
         Store multiple memories with batch embeddings
         QUALITY: 100x faster via parallel embeddings
         """
+        if not items:
+            return []
         # Extract texts for batch embedding
         texts = [item['content'] for item in items]
 
@@ -284,7 +318,7 @@ class AsyncNeuroMemoryMCP:
                 "id": item_id,
                 "result": {
                     "stored": True,
-                    "episode_id": str(getattr(episode, 'id', id(episode))),
+                    "episode_id": episode.episode_id,
                     "surprise": surprise_val,
                     "is_novel": bool(surprise_info['is_novel'])
                 }
@@ -294,7 +328,7 @@ class AsyncNeuroMemoryMCP:
         try:
             self.memory.save_state()
         except Exception as e:
-            print(f"Disk save failed: {e}", file=sys.stderr)
+            logger.error("Disk save failed after batch store: %s", e)
 
         return results
 
@@ -305,27 +339,28 @@ class AsyncNeuroMemoryMCP:
         k: int = 5
     ) -> List[Dict]:
         """Retrieve relevant memories (async)"""
+        if k < 1:
+            return {"error": "k must be >= 1"}
         if query_embedding is not None:
-            query_array = np.array(query_embedding)
+            query_array = np.array(query_embedding, dtype=np.float32)
+            if query_array.shape != (self.input_dim,):
+                return {"error": f"Embedding dimension mismatch: got {query_array.shape[0]}, expected {self.input_dim}"}
         elif query is not None:
             query_array = await self.get_embedding(query)
         else:
             return {"error": "Either query or query_embedding required"}
 
-        episodes = self.retriever.retrieve(
-            query_embedding=query_array,
-            k=k,
-            temporal_weight=0.3
-        )
+        self.retriever.config.max_retrieved = k
+        results = self.retriever.retrieve(query=query_array)
 
         return [
             {
-                "content": ep['content'],
-                "surprise": float(ep['surprise']),
-                "timestamp": ep['timestamp'].isoformat(),
-                "similarity": float(ep.get('similarity', 0))
+                "content": ep.content,
+                "surprise": float(ep.surprise),
+                "timestamp": ep.timestamp.isoformat(),
+                "similarity": float(score),
             }
-            for ep in episodes
+            for ep, score in results
         ]
 
     def consolidate_memories(self) -> Dict:
@@ -336,8 +371,8 @@ class AsyncNeuroMemoryMCP:
         # Auto-save after consolidation
         try:
             self.memory.save_state()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Disk save failed after consolidation: %s", e)
 
         return {
             "replay_count": stats['replay_count'],
@@ -369,7 +404,7 @@ class AsyncMCPServer:
         """Initialize MCP server"""
         self.mcp = AsyncNeuroMemoryMCP()
 
-        print("Async Neuro-Memory MCP Server started", file=sys.stderr)
+        logger.info("Async Neuro-Memory MCP Server started")
 
     async def handle_request(self, request: Dict) -> Dict:
         """Handle MCP tool request (async)"""
@@ -384,7 +419,6 @@ class AsyncMCPServer:
                     metadata=params.get('metadata')
                 )
             elif method == 'batch_store_memories':
-                # QUALITY: 100x faster batch operation
                 result = await self.mcp.batch_store_memories(
                     items=params['items']
                 )
@@ -404,7 +438,7 @@ class AsyncMCPServer:
             return {"result": result}
 
         except Exception as e:
-            print(f"Error handling {method}: {e}", file=sys.stderr)
+            logger.exception("Error handling %s", method)
             return {"error": str(e)}
 
     async def run(self):
@@ -437,7 +471,7 @@ class AsyncMCPServer:
                         sys.stdout.buffer.write((json.dumps(response, default=str) + '\n').encode())
                         sys.stdout.buffer.flush()
                     except Exception as ser_err:
-                        print(f"Serialization error: {ser_err}", file=sys.stderr)
+                        logger.error("Serialization error: %s", ser_err)
                         fallback = {"id": request.get("id"), "error": f"Serialization error: {ser_err}"}
                         sys.stdout.buffer.write((json.dumps(fallback) + '\n').encode())
                         sys.stdout.buffer.flush()
@@ -448,19 +482,24 @@ class AsyncMCPServer:
                     sys.stdout.buffer.flush()
 
         except KeyboardInterrupt:
-            print("Shutting down...", file=sys.stderr)
+            logger.info("Shutting down")
         finally:
             # Save memory state to disk before exit
             try:
                 self.mcp.memory.save_state()
-                print(f"Saved {len(self.mcp.memory.episodes)} episodes to disk", file=sys.stderr)
+                logger.info("Saved %d episodes to disk", len(self.mcp.memory.episodes))
             except Exception as e:
-                print(f"Failed to save state: {e}", file=sys.stderr)
+                logger.error("Failed to save state on shutdown: %s", e)
             await self.mcp.close()
 
 
 async def main():
     """Async MCP Server entry point"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
     server = AsyncMCPServer()
     await server.run()
 
