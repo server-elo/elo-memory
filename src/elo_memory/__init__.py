@@ -16,7 +16,7 @@ License: MIT
 
 import logging
 
-__version__ = "0.1.8"
+__version__ = "0.2.1"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
 __license__ = "MIT"
 
