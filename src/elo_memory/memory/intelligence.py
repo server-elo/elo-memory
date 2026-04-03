@@ -41,7 +41,7 @@ _CONTEXT_SCHEMAS: Dict[str, Dict[str, List[str]]] = {
     },
     "business": {
         "expected": ["funding", "revenue", "valuation", "runway", "customers"],
-        "triggers": ["raised", "revenue", "arr", "funding", "investor", "customer", "client"],
+        "triggers": ["raised", "revenue", "arr", "funding", "investor", "customer", "client", "startup", "company", "business"],
     },
     "product": {
         "expected": ["users", "features", "metrics", "competitors", "pricing"],

@@ -211,7 +211,7 @@ class KnowledgeBase:
 
         # --- Pattern 3: "We use/using X for Y" ---
         use_match = re.match(
-            r"(?:we(?:'re)?|i(?:'m)?|they|our team)\s+(?:use|uses|using|run|runs|running)\s+(.+?)\s+(?:for|as|between)\s+(.+)",
+            r"(?:we(?:'re)?|i(?:'m)?|they|our team)\s+(?:use|uses|using|run|runs|running)\s+(.+?)\s+(?:for|as|between)\s+([^,]+)",
             s, re.IGNORECASE,
         )
         if use_match:
@@ -233,12 +233,13 @@ class KnowledgeBase:
         pref_match = re.search(
             r"(?:should|want to|considering|thinking about|planning to)\s+"
             r"(?:switch(?:ing)?|mov(?:e|ing)|migrat(?:e|ing)|try(?:ing)?|us(?:e|ing))\s+"
-            r"(?:to\s+)?(\S+)",
+            r"(?:from\s+\S+\s+)?(?:to\s+)?(\S+)",
             s, re.IGNORECASE,
         )
         if pref_match:
             val = pref_match.group(1).strip()
-            facts["considering/want to try"] = val
+            if val.lower() not in ("from", "to", "the", "a", "an"):
+                facts["considering/want to try"] = val
 
         # --- Pattern 3b: "X for the Y" in middle of sentence ---
         for_match = re.search(
@@ -349,7 +350,8 @@ class KnowledgeBase:
         facts: Dict[str, str] = {}
         pattern = re.compile(
             r'(?:switched|moved|migrated|changed|transitioned|upgraded|replaced)\s+'
-            r'(?:from\s+)?(.+?)\s+to\s+(.+?)(?:\s+for\s+(.+))?$',
+            r'(?:from\s+)?(.+?)\s+to\s+(\S+(?:\s+\S+)?)'
+            r'(?:\s+(?:because|since|due to|for)\s+(.+))?$',
             re.IGNORECASE,
         )
         m = pattern.search(sentence)
