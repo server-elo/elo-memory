@@ -18,6 +18,7 @@ Key Algorithms:
 """
 
 import logging
+import warnings
 import numpy as np
 from typing import List, Optional, Tuple, Dict
 from dataclasses import dataclass
@@ -67,16 +68,32 @@ class HiddenMarkovEventDetector:
         Returns:
             List of boundary indices
         """
-        from hmmlearn import hmm
+        try:
+            from hmmlearn import hmm
+        except ImportError:
+            raise ImportError(
+                "hmmlearn is required for HMM event detection. "
+                "Install it with: pip install hmmlearn"
+            )
 
         # Train Gaussian HMM
         model = hmm.GaussianHMM(n_components=self.n_states, covariance_type="diag", n_iter=100)
 
         try:
-            model.fit(observations)
+            # Suppress convergence and deprecation warnings from hmmlearn
+            hmm_logger = logging.getLogger("hmmlearn")
+            old_level = hmm_logger.level
+            hmm_logger.setLevel(logging.ERROR)
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model.fit(observations)
 
-            # Predict state sequence
-            states = model.predict(observations)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    states = model.predict(observations)
+            finally:
+                hmm_logger.setLevel(old_level)
             self.state_sequence = states
 
             # Find state transitions

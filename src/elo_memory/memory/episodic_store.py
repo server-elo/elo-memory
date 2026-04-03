@@ -172,6 +172,8 @@ class EpisodicMemoryStore:
         if self.config.persistence_path:
             self.persistence_path = Path(self.config.persistence_path)
             self.persistence_path.mkdir(parents=True, exist_ok=True)
+            # Auto-load state when persistence_path is set
+            self.load_state()
 
     def _initialize_vector_db(self):
         """Initialize vector database for similarity search."""
@@ -185,13 +187,52 @@ class EpisodicMemoryStore:
                     self.chroma_client = chromadb.Client()
 
                 self.collection = self.chroma_client.get_or_create_collection(
-                    name="episodic_memories",
+                    name=f"episodic_memories_{self.config.embedding_dim}",
                     metadata={"description": "Human-inspired episodic memory storage"},
                 )
             except Exception as e:
                 logger.error("ChromaDB initialization failed, vector search disabled: %s", e)
         else:
             raise NotImplementedError("FAISS backend not yet implemented")
+
+    _encoder = None
+
+    @classmethod
+    def _get_encoder(cls):
+        """Lazy-load SentenceTransformer encoder. Returns None if not installed."""
+        if cls._encoder is not None:
+            return cls._encoder
+        try:
+            from sentence_transformers import SentenceTransformer
+            cls._encoder = SentenceTransformer("all-MiniLM-L6-v2")
+            return cls._encoder
+        except ImportError:
+            logger.warning(
+                "sentence-transformers is not installed. "
+                "Install it with: pip install sentence-transformers"
+            )
+            return None
+
+    def search(self, query, k: int = 5) -> List["Episode"]:
+        """
+        Convenience method: search episodes by string or embedding.
+
+        Args:
+            query: A string or numpy embedding vector.
+            k: Number of results to return.
+
+        Returns:
+            List of matching Episode objects.
+        """
+        if isinstance(query, str):
+            encoder = self._get_encoder()
+            if encoder is not None:
+                embedding = encoder.encode(query)
+            else:
+                embedding = self._generate_embedding({"text": query})
+        else:
+            embedding = np.asarray(query)
+        return self.retrieve_by_similarity(embedding, k=k)
 
     def store_episode(
         self,
@@ -218,6 +259,19 @@ class EpisodicMemoryStore:
         Returns:
             Created Episode object
         """
+        # Input validation
+        if content is None:
+            raise ValueError("content must not be None")
+        if embedding is not None:
+            embedding = np.asarray(embedding)
+            if embedding.shape != (self.config.embedding_dim,):
+                raise ValueError(
+                    f"embedding dimension {embedding.shape} does not match "
+                    f"configured embedding_dim ({self.config.embedding_dim},)"
+                )
+            if not np.all(np.isfinite(embedding)):
+                raise ValueError("embedding contains NaN or Inf values")
+
         # Create episode
         episode = Episode(
             content=content,
@@ -370,11 +424,12 @@ class EpisodicMemoryStore:
                 self.spatial_index[episode.location] = []
             self.spatial_index[episode.location].append(episode.episode_id)
 
-        # Entity index
+        # Entity index (case-insensitive)
         for entity in episode.entities:
-            if entity not in self.entity_index:
-                self.entity_index[entity] = []
-            self.entity_index[entity].append(episode.episode_id)
+            key = entity.lower()
+            if key not in self.entity_index:
+                self.entity_index[key] = []
+            self.entity_index[key].append(episode.episode_id)
 
     def _add_to_vector_db(self, episode: Episode):
         """Add episode to vector database for similarity search."""
@@ -395,7 +450,8 @@ class EpisodicMemoryStore:
                 ],
             )
         except Exception as e:
-            logger.warning("Failed to add episode %s to vector DB: %s", episode.episode_id, e)
+            logger.error("Failed to add episode %s to vector DB: %s", episode.episode_id, e)
+            raise
 
     def retrieve_by_similarity(
         self, query_embedding: np.ndarray, k: int = 10, filter_criteria: Optional[Dict] = None
@@ -503,7 +559,7 @@ class EpisodicMemoryStore:
 
     def retrieve_by_entity(self, entity: str) -> List[Episode]:
         """Retrieve all episodes involving a specific entity."""
-        episode_ids = self.entity_index.get(entity, [])
+        episode_ids = self.entity_index.get(entity.lower(), [])
         episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
         return [ep for ep in episodes if ep is not None]
 

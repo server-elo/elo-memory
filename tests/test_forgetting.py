@@ -21,10 +21,10 @@ class TestActivationDecay:
         a_24h = engine.compute_activation(1.0, ts, current_time=ts + timedelta(hours=24))
         assert a_24h < a_0h
 
-    def test_activation_never_below_minimum(self, engine):
+    def test_old_memories_decay_below_minimum(self, engine):
         ts = datetime.now() - timedelta(days=365)
         a = engine.compute_activation(0.5, ts)
-        assert a >= engine.config.min_activation
+        assert a < engine.config.min_activation
 
     def test_activation_at_encoding_equals_initial(self, engine):
         ts = datetime.now()

@@ -74,7 +74,7 @@ class ForgettingEngine:
             # Exponential decay: A(t) = A0 * e^(-dt)
             activation = boosted_activation * np.exp(-self.config.decay_rate * time_elapsed)
 
-        return max(activation, self.config.min_activation)
+        return activation
 
     def should_forget(self, activation: float) -> bool:
         """

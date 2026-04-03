@@ -1,16 +1,18 @@
-"""CLI for neuro-memory."""
+"""CLI for elo-memory."""
 
 import argparse
 import sys
+
+from . import __version__
 
 
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        prog="neuro-memory", description="Elo Memory: Bio-inspired episodic memory for AI"
+        prog="elo-memory", description="Elo Memory: Bio-inspired episodic memory for AI"
     )
 
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -29,9 +31,8 @@ def main():
     args = parser.parse_args()
 
     if args.command == "server":
-        print(f"Starting Neuro-Memory server on {args.host}:{args.port}")
-        print("Note: Install with 'pip install neuro-memory[api]' for full server functionality")
-        # TODO: Implement actual server startup
+        print(f"Server command is not yet implemented (requested {args.host}:{args.port}).")
+        print("This feature is planned for a future release.")
 
     elif args.command == "info":
         from . import __version__, __license__

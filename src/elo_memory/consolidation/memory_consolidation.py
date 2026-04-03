@@ -178,6 +178,42 @@ class MemoryConsolidationEngine:
                 }
                 schemas.append(schema)
 
+        # Topic-based schema extraction: keyword frequency across episodes with text content
+        keyword_counts = defaultdict(int)
+        text_episode_count = 0
+        for ep in episodes:
+            text = None
+            if hasattr(ep, "content") and isinstance(ep.content, dict):
+                text = ep.content.get("text")
+            if text:
+                text_episode_count += 1
+                words = set(text.lower().split())
+                for word in words:
+                    if len(word) > 2:  # skip very short words
+                        keyword_counts[word] += 1
+
+        if text_episode_count >= self.config.schema_threshold:
+            threshold = text_episode_count * self.config.common_entity_ratio
+            common_keywords = [
+                word for word, count in keyword_counts.items() if count >= threshold
+            ]
+            if common_keywords:
+                schemas.append({
+                    "type": "topic_pattern",
+                    "location": None,
+                    "common_entities": common_keywords,
+                    "frequency": text_episode_count,
+                    "avg_surprise": float(np.mean([
+                        ep.surprise if hasattr(ep, "surprise") else 1.0
+                        for ep in episodes
+                        if hasattr(ep, "content") and isinstance(ep.content, dict) and ep.content.get("text")
+                    ])),
+                    "episode_ids": [
+                        ep.episode_id for ep in episodes
+                        if hasattr(ep, "content") and isinstance(ep.content, dict) and ep.content.get("text")
+                    ],
+                })
+
         return schemas
 
     def consolidate(self, episodes: List, update_callback: Optional[callable] = None) -> Dict:

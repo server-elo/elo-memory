@@ -20,8 +20,12 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+    _TORCH_AVAILABLE = True
+except ImportError:
+    _TORCH_AVAILABLE = False
 from scipy.stats import entropy
 
 
@@ -33,7 +37,7 @@ class SurpriseConfig:
     surprise_threshold: float = 0.7  # Threshold for triggering memory encoding
     kl_method: str = "symmetric"  # "forward", "reverse", or "symmetric" (JS divergence)
     use_adaptive_threshold: bool = True  # Adapt threshold based on surprise distribution
-    min_observations: int = 10  # Minimum observations before calculating surprise
+    min_observations: int = 5  # Minimum observations before calculating surprise
     smoothing_alpha: float = 0.1  # Exponential moving average smoothing
     hidden_dim: int = 256  # LSTM hidden dimension for predictive model
     num_layers: int = 2  # LSTM layer count for predictive model

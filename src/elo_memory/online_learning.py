@@ -11,6 +11,8 @@ References:
 - Zenke et al. (2017): Continual learning through synaptic intelligence
 """
 
+import threading
+
 import numpy as np
 from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass
@@ -45,6 +47,7 @@ class OnlineLearner:
 
         # Replay buffer (stores important experiences)
         self.replay_buffer = deque(maxlen=self.config.replay_buffer_size)
+        self._buffer_lock = threading.Lock()
 
         # Fisher information (importance of each parameter)
         self.fisher_information = {}
@@ -73,28 +76,29 @@ class OnlineLearner:
         # Priority = surprise score
         priority = surprise
 
-        # Reservoir sampling with priority
-        if len(self.replay_buffer) < self.config.replay_buffer_size:
-            self.replay_buffer.append(
-                {
-                    "observation": observation,
-                    "surprise": surprise,
-                    "priority": priority,
-                    "metadata": metadata or {},
-                }
-            )
-        else:
-            # Replace lowest priority sample if new one is more important
-            min_priority_idx = min(
-                range(len(self.replay_buffer)), key=lambda i: self.replay_buffer[i]["priority"]
-            )
-            if priority > self.replay_buffer[min_priority_idx]["priority"]:
-                self.replay_buffer[min_priority_idx] = {
-                    "observation": observation,
-                    "surprise": surprise,
-                    "priority": priority,
-                    "metadata": metadata or {},
-                }
+        with self._buffer_lock:
+            # Reservoir sampling with priority
+            if len(self.replay_buffer) < self.config.replay_buffer_size:
+                self.replay_buffer.append(
+                    {
+                        "observation": observation,
+                        "surprise": surprise,
+                        "priority": priority,
+                        "metadata": metadata or {},
+                    }
+                )
+            else:
+                # Replace lowest priority sample if new one is more important
+                min_priority_idx = min(
+                    range(len(self.replay_buffer)), key=lambda i: self.replay_buffer[i]["priority"]
+                )
+                if priority > self.replay_buffer[min_priority_idx]["priority"]:
+                    self.replay_buffer[min_priority_idx] = {
+                        "observation": observation,
+                        "surprise": surprise,
+                        "priority": priority,
+                        "metadata": metadata or {},
+                    }
 
     def sample_replay_batch(self, batch_size: Optional[int] = None) -> List[Dict]:
         """
@@ -108,23 +112,27 @@ class OnlineLearner:
         """
         batch_size = batch_size or self.config.replay_batch_size
 
-        if len(self.replay_buffer) == 0:
+        # Snapshot buffer under lock to avoid mutation during sampling
+        with self._buffer_lock:
+            buffer_snapshot = list(self.replay_buffer)
+
+        if len(buffer_snapshot) == 0:
             return []
 
         # Sample with priority (higher surprise = higher probability)
-        priorities = np.array([exp["priority"] for exp in self.replay_buffer])
+        priorities = np.array([exp["priority"] for exp in buffer_snapshot])
         total = np.sum(priorities)
         if total == 0 or not np.isfinite(total):
             probabilities = np.ones(len(priorities)) / len(priorities)
         else:
             probabilities = priorities / total
 
-        sample_size = min(batch_size, len(self.replay_buffer))
+        sample_size = min(batch_size, len(buffer_snapshot))
         indices = np.random.choice(
-            len(self.replay_buffer), size=sample_size, replace=False, p=probabilities
+            len(buffer_snapshot), size=sample_size, replace=False, p=probabilities
         )
 
-        return [self.replay_buffer[i] for i in indices]
+        return [buffer_snapshot[i] for i in indices]
 
     def update_adaptive_threshold(self, current_value: float, threshold_type: str = "surprise"):
         """

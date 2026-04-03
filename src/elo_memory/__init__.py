@@ -34,6 +34,8 @@ try:
     from .memory.forgetting import ForgettingEngine, ForgettingConfig
     from .memory.interference import InterferenceResolver, InterferenceConfig
     from .online_learning import OnlineLearner, OnlineLearningConfig
+    from .memory.user_memory import UserMemory
+    from .brain import EloBrain
 
     __all__ = [
         "BayesianSurpriseEngine",
@@ -53,6 +55,8 @@ try:
         "InterferenceConfig",
         "OnlineLearner",
         "OnlineLearningConfig",
+        "UserMemory",
+        "EloBrain",
         "__version__",
         "__author__",
         "__license__",

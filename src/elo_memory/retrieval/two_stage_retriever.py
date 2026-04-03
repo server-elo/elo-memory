@@ -39,6 +39,7 @@ class RetrievalConfig:
     similarity_weight: float = 0.6  # Weight for similarity score
     recency_weight: float = 0.2  # Weight for recency
     importance_weight: float = 0.2  # Weight for importance
+    keyword_weight: float = 0.2  # Weight for keyword overlap scoring
 
     # Decay
     recency_decay_hours: float = 24.0  # Time constant for recency exponential decay
@@ -72,10 +73,11 @@ class TwoStageRetriever:
         """
         self.memory = memory_store
         self.config = config or RetrievalConfig()
+        self._query_text: Optional[str] = None
 
     def retrieve(
         self,
-        query: np.ndarray,
+        query,
         query_time: Optional[datetime] = None,
         filter_criteria: Optional[Dict] = None,
     ) -> List[Tuple[Episode, float]]:
@@ -83,7 +85,7 @@ class TwoStageRetriever:
         Two-stage episodic retrieval.
 
         Args:
-            query: Query vector/embedding
+            query: Query vector/embedding or string (auto-encoded via store's encoder)
             query_time: Time context for retrieval (defaults to now)
             filter_criteria: Optional filters (e.g., location, entities)
 
@@ -91,7 +93,17 @@ class TwoStageRetriever:
             List of (episode, score) tuples, sorted by relevance
         """
         if query is None:
-            raise ValueError("query must be a numpy array, got None")
+            raise ValueError("query must be a numpy array or string, got None")
+
+        # Auto-encode string queries
+        self._query_text: Optional[str] = None
+        if isinstance(query, str):
+            self._query_text = query
+            encoder = self.memory._get_encoder()
+            if encoder is not None:
+                query = encoder.encode(query)
+            else:
+                query = self.memory._generate_embedding({"text": query})
         query = np.asarray(query)
 
         query_time = query_time or datetime.now()
@@ -203,11 +215,22 @@ class TwoStageRetriever:
             # 3. Importance score (already normalized)
             importance = episode.importance
 
+            # 4. Keyword overlap score
+            keyword_score = 0.0
+            if self._query_text and isinstance(episode.content, dict):
+                ep_text = episode.content.get("text", "")
+                if ep_text:
+                    query_words = set(self._query_text.lower().split())
+                    ep_words = set(ep_text.lower().split())
+                    if query_words:
+                        keyword_score = len(query_words & ep_words) / len(query_words)
+
             # Combined score
             score = (
                 self.config.similarity_weight * similarity
                 + self.config.recency_weight * recency
                 + self.config.importance_weight * importance
+                + self.config.keyword_weight * keyword_score
             )
 
             scored_episodes.append((episode, score))
