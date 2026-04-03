@@ -38,7 +38,7 @@ Every other memory system stores text and searches it. Elo Memory **understands*
 ## Quick Start
 
 ```bash
-pip install "elo-memory[ml]"
+pip install elo-memory
 ```
 
 ### For AI agents (recommended)
@@ -169,7 +169,7 @@ brain._kb.get_all()
 
 ```bash
 # Recommended (includes sentence-transformers)
-pip install "elo-memory[ml]"
+pip install elo-memory
 
 # Minimal (provide your own embeddings)
 pip install elo-memory
