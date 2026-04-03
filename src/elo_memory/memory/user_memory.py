@@ -29,53 +29,173 @@ logger = logging.getLogger(__name__)
 
 _TOPIC_RULES: Dict[str, List[str]] = {
     "tech_stack": [
-        "react", "vue", "angular", "svelte", "django", "flask", "fastapi",
-        "express", "nextjs", "next.js", "rails", "laravel", "spring",
-        "typescript", "javascript", "python", "golang", "rust", "kotlin",
-        "swift", "java", "c#", "c++", "ruby", "php", "elixir", "haskell",
+        "react",
+        "vue",
+        "angular",
+        "svelte",
+        "django",
+        "flask",
+        "fastapi",
+        "express",
+        "nextjs",
+        "next.js",
+        "rails",
+        "laravel",
+        "spring",
+        "typescript",
+        "javascript",
+        "python",
+        "golang",
+        "rust",
+        "kotlin",
+        "swift",
+        "java",
+        "c#",
+        "c++",
+        "ruby",
+        "php",
+        "elixir",
+        "haskell",
     ],
     "database": [
-        "postgres", "postgresql", "mysql", "sqlite", "mongodb", "mongo",
-        "redis", "dynamodb", "cassandra", "couchdb", "firestore",
-        "supabase", "prisma", "drizzle", "sqlalchemy",
+        "postgres",
+        "postgresql",
+        "mysql",
+        "sqlite",
+        "mongodb",
+        "mongo",
+        "redis",
+        "dynamodb",
+        "cassandra",
+        "couchdb",
+        "firestore",
+        "supabase",
+        "prisma",
+        "drizzle",
+        "sqlalchemy",
     ],
     "infrastructure": [
-        "docker", "kubernetes", "k8s", "terraform", "ansible", "aws",
-        "gcp", "azure", "vercel", "netlify", "heroku", "cloudflare",
-        "nginx", "ci/cd", "github actions", "jenkins", "deploy",
+        "docker",
+        "kubernetes",
+        "k8s",
+        "terraform",
+        "ansible",
+        "aws",
+        "gcp",
+        "azure",
+        "vercel",
+        "netlify",
+        "heroku",
+        "cloudflare",
+        "nginx",
+        "ci/cd",
+        "github actions",
+        "jenkins",
+        "deploy",
     ],
     "payment": [
-        "stripe", "paypal", "braintree", "square", "billing",
-        "subscription", "invoice", "payment", "checkout", "pricing",
+        "stripe",
+        "paypal",
+        "braintree",
+        "square",
+        "billing",
+        "subscription",
+        "invoice",
+        "payment",
+        "checkout",
+        "pricing",
     ],
     "security": [
-        "auth", "oauth", "jwt", "encryption", "ssl", "tls",
-        "firewall", "vulnerability", "penetration", "security",
-        "rbac", "permissions", "2fa", "mfa",
+        "auth",
+        "oauth",
+        "jwt",
+        "encryption",
+        "ssl",
+        "tls",
+        "firewall",
+        "vulnerability",
+        "penetration",
+        "security",
+        "rbac",
+        "permissions",
+        "2fa",
+        "mfa",
     ],
     "team": [
-        "hired", "fired", "onboarding", "standup", "sprint",
-        "retro", "team", "employee", "manager", "lead",
-        "promoted", "intern", "contractor",
+        "hired",
+        "fired",
+        "onboarding",
+        "standup",
+        "sprint",
+        "retro",
+        "team",
+        "employee",
+        "manager",
+        "lead",
+        "promoted",
+        "intern",
+        "contractor",
     ],
     "fundraising": [
-        "funding", "seed", "series a", "series b", "investor",
-        "pitch", "valuation", "runway", "revenue", "arr", "mrr",
-        "vc", "angel", "fundraising", "round",
+        "funding",
+        "seed",
+        "series a",
+        "series b",
+        "investor",
+        "pitch",
+        "valuation",
+        "runway",
+        "revenue",
+        "arr",
+        "mrr",
+        "vc",
+        "angel",
+        "fundraising",
+        "round",
     ],
     "performance": [
-        "latency", "throughput", "p99", "p95", "benchmark",
-        "optimization", "cache", "caching", "bottleneck", "slow",
-        "performance", "speed", "fast", "profiling",
+        "latency",
+        "throughput",
+        "p99",
+        "p95",
+        "benchmark",
+        "optimization",
+        "cache",
+        "caching",
+        "bottleneck",
+        "slow",
+        "performance",
+        "speed",
+        "fast",
+        "profiling",
     ],
     "ml": [
-        "model", "training", "inference", "embedding", "llm",
-        "transformer", "fine-tune", "dataset", "gpu", "cuda",
-        "pytorch", "tensorflow", "machine learning", "neural",
+        "model",
+        "training",
+        "inference",
+        "embedding",
+        "llm",
+        "transformer",
+        "fine-tune",
+        "dataset",
+        "gpu",
+        "cuda",
+        "pytorch",
+        "tensorflow",
+        "machine learning",
+        "neural",
     ],
     "monitoring": [
-        "grafana", "prometheus", "datadog", "sentry", "logging",
-        "alerting", "metrics", "dashboard", "observability", "tracing",
+        "grafana",
+        "prometheus",
+        "datadog",
+        "sentry",
+        "logging",
+        "alerting",
+        "metrics",
+        "dashboard",
+        "observability",
+        "tracing",
     ],
 }
 
@@ -187,7 +307,9 @@ class UserMemory:
         )
         self._store = EpisodicMemoryStore(store_config)
 
-        retrieval_config = RetrievalConfig(max_retrieved=20, k_similarity=30, similarity_threshold=0.05)
+        retrieval_config = RetrievalConfig(
+            max_retrieved=20, k_similarity=30, similarity_threshold=0.05
+        )
         self._retriever = TwoStageRetriever(self._store, retrieval_config)
 
         self._entity_extractor = EntityExtractor()
@@ -218,6 +340,7 @@ class UserMemory:
     def _get_embedder(self):
         if self._embedder is None:
             from sentence_transformers import SentenceTransformer
+
             self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
         return self._embedder
 
@@ -308,9 +431,11 @@ class UserMemory:
                         if ep.embedding is None:
                             continue
                         import numpy as np
-                        cos = float(np.dot(new_emb, ep.embedding) / (
-                            np.linalg.norm(new_emb) * np.linalg.norm(ep.embedding) + 1e-8
-                        ))
+
+                        cos = float(
+                            np.dot(new_emb, ep.embedding)
+                            / (np.linalg.norm(new_emb) * np.linalg.norm(ep.embedding) + 1e-8)
+                        )
                         # Moderate similarity (same topic area) + "new" language = supersede
                         if cos > 0.35:
                             self._superseded.add(ep.episode_id)
@@ -336,7 +461,9 @@ class UserMemory:
                 self._superseded.add(ep.episode_id)
                 logger.debug(
                     "Superseded episode %s (old: %s, new: %s)",
-                    ep.episode_id, old_value, new_value,
+                    ep.episode_id,
+                    old_value,
+                    new_value,
                 )
 
     @staticmethod
@@ -467,18 +594,14 @@ class UserMemory:
         results = self._retriever.retrieve(embedding)
 
         # Filter superseded
-        results = [
-            (ep, score)
-            for ep, score in results
-            if ep.episode_id not in self._superseded
-        ]
+        results = [(ep, score) for ep, score in results if ep.episode_id not in self._superseded]
 
         # Topic-based supplementation
         query_topics = self._detect_topics(query)
         if query_topics:
-            topic_results = self._recall_by_topics(query_topics, exclude_ids={
-                ep.episode_id for ep, _ in results
-            })
+            topic_results = self._recall_by_topics(
+                query_topics, exclude_ids={ep.episode_id for ep, _ in results}
+            )
             # Merge with a small boost
             for ep, base_score in topic_results:
                 results.append((ep, base_score + 0.05))
@@ -541,10 +664,12 @@ class UserMemory:
 
     def new_session(self) -> str:
         """Start a new session. Returns the new session id."""
-        self._sessions.append({
-            "session_id": self._session_id,
-            "ended": datetime.now().isoformat(),
-        })
+        self._sessions.append(
+            {
+                "session_id": self._session_id,
+                "ended": datetime.now().isoformat(),
+            }
+        )
         self._session_id = str(uuid.uuid4())
         self._save_meta()
         return self._session_id
@@ -580,6 +705,7 @@ class UserMemory:
         with open(tmp, "w") as f:
             json.dump(meta, f)
         import os
+
         os.replace(str(tmp), str(self._meta_path()))
 
     def _load_meta(self):

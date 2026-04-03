@@ -45,7 +45,10 @@ _HAS_INFO_RE = re.compile(
 _COMMITMENT_PATTERNS: List[re.Pattern] = [
     re.compile(r"I'll\s+(.+?)(?:\.|$)", re.IGNORECASE),
     re.compile(r"I've\s+(?:noted|recorded|saved|remembered)\s+(.+?)(?:\.|$)", re.IGNORECASE),
-    re.compile(r"I(?:'ll|\s+will)\s+(?:check|look\s+into|investigate|follow\s+up\s+on|get\s+back\s+to\s+you\s+(?:on|about))\s+(.+?)(?:\.|$)", re.IGNORECASE),
+    re.compile(
+        r"I(?:'ll|\s+will)\s+(?:check|look\s+into|investigate|follow\s+up\s+on|get\s+back\s+to\s+you\s+(?:on|about))\s+(.+?)(?:\.|$)",
+        re.IGNORECASE,
+    ),
     re.compile(r"I(?:'ll|\s+will)\s+(?:make\s+sure|ensure)\s+(.+?)(?:\.|$)", re.IGNORECASE),
 ]
 

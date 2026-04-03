@@ -14,39 +14,96 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-
 # Category words used to infer KB keys from transition sentences
 _CATEGORY_WORDS = {
-    "backend", "frontend", "database", "payment", "hosting",
-    "build", "monitoring", "framework", "language", "cloud",
-    "ci", "cd", "ci/cd", "auth", "authentication", "cache",
-    "queue", "messaging", "search", "storage", "cdn", "dns",
-    "orm", "api", "gateway", "proxy", "load balancer",
-    "orchestration", "container", "infrastructure",
+    "backend",
+    "frontend",
+    "database",
+    "payment",
+    "hosting",
+    "build",
+    "monitoring",
+    "framework",
+    "language",
+    "cloud",
+    "ci",
+    "cd",
+    "ci/cd",
+    "auth",
+    "authentication",
+    "cache",
+    "queue",
+    "messaging",
+    "search",
+    "storage",
+    "cdn",
+    "dns",
+    "orm",
+    "api",
+    "gateway",
+    "proxy",
+    "load balancer",
+    "orchestration",
+    "container",
+    "infrastructure",
 }
 
 # Well-known tech values → their category (used when context is ambiguous)
 _VALUE_TO_CATEGORY = {
-    "kubernetes": "orchestration", "k8s": "orchestration",
-    "docker": "container", "ecs": "orchestration", "eks": "orchestration",
-    "gke": "orchestration", "heroku": "hosting", "railway": "hosting",
-    "vercel": "hosting", "netlify": "hosting", "aws": "cloud",
-    "gcp": "cloud", "azure": "cloud",
-    "kafka": "streaming", "rabbitmq": "messaging", "redis": "cache",
-    "postgresql": "database", "postgres": "database", "mysql": "database",
-    "mongodb": "database", "dynamodb": "database",
-    "stripe": "payment", "adyen": "payment", "paypal": "payment",
-    "datadog": "monitoring", "sentry": "monitoring", "grafana": "monitoring",
-    "github actions": "ci/cd", "jenkins": "ci/cd", "circleci": "ci/cd",
-    "webpack": "build", "vite": "build", "esbuild": "build",
-    "fastapi": "backend", "django": "backend", "express": "backend",
-    "react": "frontend", "next.js": "frontend", "vue": "frontend",
+    "kubernetes": "orchestration",
+    "k8s": "orchestration",
+    "docker": "container",
+    "ecs": "orchestration",
+    "eks": "orchestration",
+    "gke": "orchestration",
+    "heroku": "hosting",
+    "railway": "hosting",
+    "vercel": "hosting",
+    "netlify": "hosting",
+    "aws": "cloud",
+    "gcp": "cloud",
+    "azure": "cloud",
+    "kafka": "streaming",
+    "rabbitmq": "messaging",
+    "redis": "cache",
+    "postgresql": "database",
+    "postgres": "database",
+    "mysql": "database",
+    "mongodb": "database",
+    "dynamodb": "database",
+    "stripe": "payment",
+    "adyen": "payment",
+    "paypal": "payment",
+    "datadog": "monitoring",
+    "sentry": "monitoring",
+    "grafana": "monitoring",
+    "github actions": "ci/cd",
+    "jenkins": "ci/cd",
+    "circleci": "ci/cd",
+    "webpack": "build",
+    "vite": "build",
+    "esbuild": "build",
+    "fastapi": "backend",
+    "django": "backend",
+    "express": "backend",
+    "react": "frontend",
+    "next.js": "frontend",
+    "vue": "frontend",
 }
 
 # Compliance / certification keywords
 _COMPLIANCE_KEYWORDS = {
-    "soc2", "soc 2", "hipaa", "gdpr", "pci", "pci-dss",
-    "iso 27001", "iso27001", "fedramp", "ccpa", "ferpa",
+    "soc2",
+    "soc 2",
+    "hipaa",
+    "gdpr",
+    "pci",
+    "pci-dss",
+    "iso 27001",
+    "iso27001",
+    "fedramp",
+    "ccpa",
+    "ferpa",
 }
 
 # Identity keywords mapped to canonical key names
@@ -123,12 +180,14 @@ class KnowledgeBase:
                         self._facts[f"_old_{key}"] = old
                     self._facts[key] = value
                     changes[key] = value
-                    self._history.append({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "key": key,
-                        "old": old,
-                        "new": value,
-                    })
+                    self._history.append(
+                        {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "key": key,
+                            "old": old,
+                            "new": value,
+                        }
+                    )
         if changes and self._persistence_path:
             self._save()
         return changes
@@ -205,7 +264,7 @@ class KnowledgeBase:
                 continue
             # Split on ". " (period followed by space) or period at end
             # but preserve email addresses and URLs
-            parts = re.split(r'(?<!\w\.\w)(?<![A-Z][a-z])\.(?:\s|$)', line)
+            parts = re.split(r"(?<!\w\.\w)(?<![A-Z][a-z])\.(?:\s|$)", line)
             for p in parts:
                 p = p.strip()
                 if p:
@@ -234,12 +293,13 @@ class KnowledgeBase:
         # --- Pattern 3: "We use/using X for Y" ---
         use_match = re.match(
             r"(?:we(?:'re)?|i(?:'m)?|they|our team)\s+(?:use|uses|using|run|runs|running)\s+(.+?)\s+(?:for|as|between)\s+([^,]+)",
-            s, re.IGNORECASE,
+            s,
+            re.IGNORECASE,
         )
         if use_match:
             value, key = use_match.group(1).strip(), use_match.group(2).strip()
             # Also check for "X and Y for Z" → extract Y separately with label from Z
-            parts = re.split(r'\s+and\s+', value)
+            parts = re.split(r"\s+and\s+", value)
             if len(parts) == 1:
                 facts[key.lower()] = value
             else:
@@ -256,7 +316,8 @@ class KnowledgeBase:
             r"(?:should|want to|considering|thinking about|planning to)\s+"
             r"(?:switch(?:ing)?|mov(?:e|ing)|migrat(?:e|ing)|try(?:ing)?|us(?:e|ing))\s+"
             r"(?:from\s+\S+\s+)?(?:to\s+)?(\S+)",
-            s, re.IGNORECASE,
+            s,
+            re.IGNORECASE,
         )
         if pref_match:
             val = pref_match.group(1).strip()
@@ -266,7 +327,8 @@ class KnowledgeBase:
         # --- Pattern 3b: "X for the Y" in middle of sentence ---
         for_match = re.search(
             r"(\S+)\s+for\s+the\s+(database|backend|frontend|server|monitoring|build|payment)",
-            s, re.IGNORECASE,
+            s,
+            re.IGNORECASE,
         )
         if for_match:
             val, cat = for_match.group(1).strip(), for_match.group(2).strip().lower()
@@ -275,7 +337,8 @@ class KnowledgeBase:
         # --- Pattern 3c: "working on X" → project ---
         work_match = re.search(
             r"(?:I'?m |we(?:'re)? )?working on (.+?)(?:\s*[,.]|\s*$)",
-            s, re.IGNORECASE,
+            s,
+            re.IGNORECASE,
         )
         if work_match:
             facts["project"] = work_match.group(1).strip()
@@ -292,7 +355,8 @@ class KnowledgeBase:
         # --- Patterns 1 & 2: "My/Our/The X is Y" ---
         is_match = re.match(
             r"(?:my|our|the|his|her|their|its)\s+(.+?)\s+is\s+(.+)",
-            s, re.IGNORECASE,
+            s,
+            re.IGNORECASE,
         )
         if is_match:
             key, value = is_match.group(1).strip().lower(), is_match.group(2).strip()
@@ -300,7 +364,9 @@ class KnowledgeBase:
 
         # --- Pattern 6b: "X is Y" (generic, no possessive required) ---
         # "P99 latency is 450ms", "DAU is 45k", "Error rate is 3.2%"
-        generic_is = re.match(r"(\S+(?:\s+\S+)?)\s+is\s+(\d[\d,.]*\s*[%kKmMbBms]*\S*)", s, re.IGNORECASE)
+        generic_is = re.match(
+            r"(\S+(?:\s+\S+)?)\s+is\s+(\d[\d,.]*\s*[%kKmMbBms]*\S*)", s, re.IGNORECASE
+        )
         if generic_is and generic_is.group(1).lower() not in facts:
             key = generic_is.group(1).strip().lower()
             val = generic_is.group(2).strip()
@@ -308,7 +374,9 @@ class KnowledgeBase:
                 facts[key] = val
 
         # --- Pattern 6c: Corrections: "Actually X is Y" / "X is actually Y" ---
-        correction = re.search(r"[Aa]ctually\s+(?:my\s+)?(\S+(?:\s+\S+)?)\s+is\s+(.+?)(?:\s*,|\s*$)", s)
+        correction = re.search(
+            r"[Aa]ctually\s+(?:my\s+)?(\S+(?:\s+\S+)?)\s+is\s+(.+?)(?:\s*,|\s*$)", s
+        )
         if correction:
             facts[correction.group(1).strip().lower()] = correction.group(2).strip()
 
@@ -342,7 +410,7 @@ class KnowledgeBase:
         """Extract 'X backend, Y frontend, Z database' patterns."""
         facts: Dict[str, str] = {}
         # Match patterns like "Word category" separated by commas/and
-        parts = re.split(r',\s*|\s+and\s+', sentence)
+        parts = re.split(r",\s*|\s+and\s+", sentence)
         if len(parts) < 2:
             return facts
         matched_any = False
@@ -354,14 +422,14 @@ class KnowledgeBase:
             # not a full clause like "Hired Jake for frontend"
             for cat in _CATEGORY_WORDS:
                 pattern = re.compile(
-                    rf'^(\S+(?:\s+\S+)?)\s+{re.escape(cat)}$',
+                    rf"^(\S+(?:\s+\S+)?)\s+{re.escape(cat)}$",
                     re.IGNORECASE,
                 )
                 m = pattern.match(part)
                 if m:
                     val = m.group(1).strip()
                     # Skip if value looks like an action clause
-                    if not re.match(r'(?:hired|promoted|fired|using|keeping|for)\b', val, re.I):
+                    if not re.match(r"(?:hired|promoted|fired|using|keeping|for)\b", val, re.I):
                         facts[cat] = val
                     matched_any = True
                     break
@@ -371,9 +439,9 @@ class KnowledgeBase:
         """Extract 'switched/moved/migrated from X to Y' patterns."""
         facts: Dict[str, str] = {}
         pattern = re.compile(
-            r'(?:switched|moved|migrated|changed|transitioned|upgraded|replaced)\s+'
-            r'(?:from\s+)?(.+?)\s+to\s+(\S+(?:\s+\S+)?)'
-            r'(?:\s+(?:because|since|due to|for)\s+(.+))?$',
+            r"(?:switched|moved|migrated|changed|transitioned|upgraded|replaced)\s+"
+            r"(?:from\s+)?(.+?)\s+to\s+(\S+(?:\s+\S+)?)"
+            r"(?:\s+(?:because|since|due to|for)\s+(.+))?$",
             re.IGNORECASE,
         )
         m = pattern.search(sentence)
@@ -449,8 +517,8 @@ class KnowledgeBase:
         for keyword, canonical in _IDENTITY_KEYWORDS.items():
             # "My name is John" / "name: John" / "Name is John"
             patterns = [
-                rf'(?:my|our|his|her)\s+{re.escape(keyword)}\s+is\s+(.+)',
-                rf'{re.escape(keyword)}\s*[:=]\s*(.+)',
+                rf"(?:my|our|his|her)\s+{re.escape(keyword)}\s+is\s+(.+)",
+                rf"{re.escape(keyword)}\s*[:=]\s*(.+)",
             ]
             for pat in patterns:
                 m = re.search(pat, sentence, re.IGNORECASE)
@@ -473,7 +541,7 @@ class KnowledgeBase:
             facts["company"] = role_match.group(2).strip()
 
         # Email extraction
-        email_match = re.search(r'[\w.+-]+@[\w.-]+\.\w+', sentence)
+        email_match = re.search(r"[\w.+-]+@[\w.-]+\.\w+", sentence)
         if email_match:
             facts["email"] = email_match.group(0)
 
@@ -485,8 +553,9 @@ class KnowledgeBase:
 
         # "Hired X for Y" / "Hired X as Y"
         hire_match = re.match(
-            r'(?:hired|recruited|onboarded)\s+(.+?)\s+(?:for|as)\s+(.+)',
-            sentence, re.IGNORECASE,
+            r"(?:hired|recruited|onboarded)\s+(.+?)\s+(?:for|as)\s+(.+)",
+            sentence,
+            re.IGNORECASE,
         )
         if hire_match:
             person = hire_match.group(1).strip().lower()
@@ -495,8 +564,9 @@ class KnowledgeBase:
 
         # "Promoted X to Y"
         promo_match = re.match(
-            r'(?:promoted|elevated)\s+(.+?)\s+to\s+(.+)',
-            sentence, re.IGNORECASE,
+            r"(?:promoted|elevated)\s+(.+?)\s+to\s+(.+)",
+            sentence,
+            re.IGNORECASE,
         )
         if promo_match:
             person = promo_match.group(1).strip().lower()
@@ -505,20 +575,23 @@ class KnowledgeBase:
 
         # "Our/My manager Tom" / "manager is Tom"
         mgr_match = re.search(
-            r'(?:our|my)\s+manager\s+([A-Z][a-z]+)', sentence,
+            r"(?:our|my)\s+manager\s+([A-Z][a-z]+)",
+            sentence,
         )
         if mgr_match:
             facts["manager"] = mgr_match.group(1)
         mgr_match2 = re.search(
-            r'manager\s+(?:is\s+)?([A-Z][a-z]+)', sentence,
+            r"manager\s+(?:is\s+)?([A-Z][a-z]+)",
+            sentence,
         )
         if mgr_match2 and "manager" not in facts:
             facts["manager"] = mgr_match2.group(1)
 
         # "Team size is X" / "team of X" / "team is now X" / "Total team size is now 12"
         size_match = re.search(
-            r'team\s+(?:size\s+)?(?:is\s+)?(?:now\s+)?(?:of\s+)?(\d+)',
-            sentence, re.IGNORECASE,
+            r"team\s+(?:size\s+)?(?:is\s+)?(?:now\s+)?(?:of\s+)?(\d+)",
+            sentence,
+            re.IGNORECASE,
         )
         if size_match:
             facts["team size"] = size_match.group(1)
@@ -532,7 +605,7 @@ class KnowledgeBase:
 
         # "Raised $X" / "Raised $X in Y"
         raised_match = re.search(
-            r'raised\s+(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)',
+            r"raised\s+(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)",
             s_lower,
         )
         if raised_match:
@@ -540,7 +613,7 @@ class KnowledgeBase:
 
         # "$X valuation"
         val_match = re.search(
-            r'(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+valuation',
+            r"(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+valuation",
             s_lower,
         )
         if val_match:
@@ -548,12 +621,12 @@ class KnowledgeBase:
 
         # "revenue of $X" / "ARR of $X" / "$X ARR" / "$X revenue"
         rev_match = re.search(
-            r'(?:revenue|arr)\s+(?:of\s+)?(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)',
+            r"(?:revenue|arr)\s+(?:of\s+)?(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)",
             s_lower,
         )
         if not rev_match:
             rev_match = re.search(
-                r'(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+(?:revenue|arr)',
+                r"(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+(?:revenue|arr)",
                 s_lower,
             )
         if rev_match:
@@ -567,7 +640,7 @@ class KnowledgeBase:
 
         # "X is Y%" / "X: Y%" / "X at Y%"
         pct_match = re.search(
-            r'(\w[\w\s]*?)\s+(?:is|at|was|reached|hit)\s+([\d.]+%)',
+            r"(\w[\w\s]*?)\s+(?:is|at|was|reached|hit)\s+([\d.]+%)",
             sentence.lower(),
         )
         if pct_match:
@@ -598,11 +671,32 @@ class KnowledgeBase:
 
     def _query_tech_stack(self, active: Dict[str, str]) -> Optional[str]:
         tech_keys = {
-            "backend", "frontend", "database", "framework", "language",
-            "hosting", "cloud", "cache", "queue", "api", "gateway",
-            "cdn", "ci", "cd", "ci/cd", "build", "monitoring",
-            "payment", "auth", "authentication", "search", "storage",
-            "orm", "proxy", "load balancer", "messaging",
+            "backend",
+            "frontend",
+            "database",
+            "framework",
+            "language",
+            "hosting",
+            "cloud",
+            "cache",
+            "queue",
+            "api",
+            "gateway",
+            "cdn",
+            "ci",
+            "cd",
+            "ci/cd",
+            "build",
+            "monitoring",
+            "payment",
+            "auth",
+            "authentication",
+            "search",
+            "storage",
+            "orm",
+            "proxy",
+            "load balancer",
+            "messaging",
         }
         results = []
         for key, value in active.items():

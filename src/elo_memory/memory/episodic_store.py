@@ -204,6 +204,7 @@ class EpisodicMemoryStore:
             return cls._encoder
         try:
             from sentence_transformers import SentenceTransformer
+
             cls._encoder = SentenceTransformer("all-MiniLM-L6-v2")
             return cls._encoder
         except ImportError:

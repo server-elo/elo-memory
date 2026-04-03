@@ -194,25 +194,34 @@ class MemoryConsolidationEngine:
 
         if text_episode_count >= self.config.schema_threshold:
             threshold = text_episode_count * self.config.common_entity_ratio
-            common_keywords = [
-                word for word, count in keyword_counts.items() if count >= threshold
-            ]
+            common_keywords = [word for word, count in keyword_counts.items() if count >= threshold]
             if common_keywords:
-                schemas.append({
-                    "type": "topic_pattern",
-                    "location": None,
-                    "common_entities": common_keywords,
-                    "frequency": text_episode_count,
-                    "avg_surprise": float(np.mean([
-                        ep.surprise if hasattr(ep, "surprise") else 1.0
-                        for ep in episodes
-                        if hasattr(ep, "content") and isinstance(ep.content, dict) and ep.content.get("text")
-                    ])),
-                    "episode_ids": [
-                        ep.episode_id for ep in episodes
-                        if hasattr(ep, "content") and isinstance(ep.content, dict) and ep.content.get("text")
-                    ],
-                })
+                schemas.append(
+                    {
+                        "type": "topic_pattern",
+                        "location": None,
+                        "common_entities": common_keywords,
+                        "frequency": text_episode_count,
+                        "avg_surprise": float(
+                            np.mean(
+                                [
+                                    ep.surprise if hasattr(ep, "surprise") else 1.0
+                                    for ep in episodes
+                                    if hasattr(ep, "content")
+                                    and isinstance(ep.content, dict)
+                                    and ep.content.get("text")
+                                ]
+                            )
+                        ),
+                        "episode_ids": [
+                            ep.episode_id
+                            for ep in episodes
+                            if hasattr(ep, "content")
+                            and isinstance(ep.content, dict)
+                            and ep.content.get("text")
+                        ],
+                    }
+                )
 
         return schemas
 

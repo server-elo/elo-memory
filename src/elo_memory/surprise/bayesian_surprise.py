@@ -20,9 +20,11 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
+
 try:
     import torch
     import torch.nn as nn
+
     _TORCH_AVAILABLE = True
 except ImportError:
     _TORCH_AVAILABLE = False

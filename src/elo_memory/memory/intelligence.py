@@ -19,7 +19,6 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
-
 # ── Context schemas: what SHOULD be known for a given topic ──────
 
 _CONTEXT_SCHEMAS: Dict[str, Dict[str, List[str]]] = {
@@ -41,7 +40,18 @@ _CONTEXT_SCHEMAS: Dict[str, Dict[str, List[str]]] = {
     },
     "business": {
         "expected": ["funding", "revenue", "valuation", "runway", "customers"],
-        "triggers": ["raised", "revenue", "arr", "funding", "investor", "customer", "client", "startup", "company", "business"],
+        "triggers": [
+            "raised",
+            "revenue",
+            "arr",
+            "funding",
+            "investor",
+            "customer",
+            "client",
+            "startup",
+            "company",
+            "business",
+        ],
     },
     "product": {
         "expected": ["users", "features", "metrics", "competitors", "pricing"],
@@ -105,10 +115,27 @@ class MemoryIntelligence:
 
         # Synonym groups: any word satisfies the whole group
         synonyms = {
-            "hosting": {"hosting", "deploy", "deployment", "server", "aws", "gcp", "azure", "heroku", "vercel"},
+            "hosting": {
+                "hosting",
+                "deploy",
+                "deployment",
+                "server",
+                "aws",
+                "gcp",
+                "azure",
+                "heroku",
+                "vercel",
+            },
             "orchestration": {"orchestration", "kubernetes", "k8s", "docker", "ecs", "eks"},
             "ci/cd": {"ci/cd", "ci", "cd", "github actions", "jenkins", "circleci", "pipeline"},
-            "monitoring": {"monitoring", "datadog", "grafana", "sentry", "prometheus", "observability"},
+            "monitoring": {
+                "monitoring",
+                "datadog",
+                "grafana",
+                "sentry",
+                "prometheus",
+                "observability",
+            },
             "database": {"database", "postgresql", "postgres", "mysql", "mongodb", "redis", "db"},
             "compliance": {"compliance", "soc2", "hipaa", "gdpr", "pci", "iso"},
             "funding": {"funding", "raised", "series", "seed", "investment"},
@@ -130,11 +157,13 @@ class MemoryIntelligence:
                 if not found:
                     missing.append(expected)
             if missing:
-                gaps.append({
-                    "topic": schema_name,
-                    "missing": missing,
-                    "suggestion": f"Consider asking about: {', '.join(missing)}",
-                })
+                gaps.append(
+                    {
+                        "topic": schema_name,
+                        "missing": missing,
+                        "suggestion": f"Consider asking about: {', '.join(missing)}",
+                    }
+                )
 
         return gaps
 
@@ -151,32 +180,38 @@ class MemoryIntelligence:
         # "X because Y"
         m = re.search(r"(.+?)\s+because\s+(.+?)(?:\.|$)", text, re.IGNORECASE)
         if m:
-            links.append({
-                "effect": m.group(1).strip(),
-                "cause": m.group(2).strip(),
-                "episode_id": episode_id,
-                "raw": text,
-            })
+            links.append(
+                {
+                    "effect": m.group(1).strip(),
+                    "cause": m.group(2).strip(),
+                    "episode_id": episode_id,
+                    "raw": text,
+                }
+            )
 
         # "due to X, Y"
         m = re.search(r"due to\s+(.+?),\s*(.+?)(?:\.|$)", text, re.IGNORECASE)
         if m:
-            links.append({
-                "cause": m.group(1).strip(),
-                "effect": m.group(2).strip(),
-                "episode_id": episode_id,
-                "raw": text,
-            })
+            links.append(
+                {
+                    "cause": m.group(1).strip(),
+                    "effect": m.group(2).strip(),
+                    "episode_id": episode_id,
+                    "raw": text,
+                }
+            )
 
         # "X so that Y" / "X in order to Y"
         m = re.search(r"(.+?)\s+(?:so that|in order to)\s+(.+?)(?:\.|$)", text, re.IGNORECASE)
         if m:
-            links.append({
-                "cause": m.group(1).strip(),
-                "effect": m.group(2).strip(),
-                "episode_id": episode_id,
-                "raw": text,
-            })
+            links.append(
+                {
+                    "cause": m.group(1).strip(),
+                    "effect": m.group(2).strip(),
+                    "episode_id": episode_id,
+                    "raw": text,
+                }
+            )
 
         self._causal_links.extend(links)
         return links
@@ -186,9 +221,11 @@ class MemoryIntelligence:
         query_lower = query.lower()
         matches: List[Dict[str, str]] = []
         for link in self._causal_links:
-            if (query_lower in link["effect"].lower() or
-                query_lower in link["raw"].lower() or
-                any(w in link["effect"].lower() for w in query_lower.split() if len(w) > 3)):
+            if (
+                query_lower in link["effect"].lower()
+                or query_lower in link["raw"].lower()
+                or any(w in link["effect"].lower() for w in query_lower.split() if len(w) > 3)
+            ):
                 matches.append(link)
         return matches
 
@@ -210,10 +247,7 @@ class MemoryIntelligence:
     def get_decision_history(self, topic: str) -> List[Dict[str, str]]:
         """Get how decisions about a topic evolved over time."""
         topic_lower = topic.lower()
-        return [
-            d for d in self._decision_chain
-            if topic_lower in d["text"].lower()
-        ]
+        return [d for d in self._decision_chain if topic_lower in d["text"].lower()]
 
     # ── 4. Temporal Summarization ────────────────────────────────
 
@@ -279,15 +313,22 @@ class MemoryIntelligence:
             suggestions.append(gap["suggestion"])
 
         # From unresolved decisions
-        considering = [d for d in self._decision_chain
-                      if "considering" in d["text"].lower() or "thinking" in d["text"].lower()]
+        considering = [
+            d
+            for d in self._decision_chain
+            if "considering" in d["text"].lower() or "thinking" in d["text"].lower()
+        ]
         for d in considering[-2:]:  # last 2 unresolved
             suggestions.append(f"Follow up: {d['text'][:60]}...")
 
         # From causal links without resolution
         unresolved_causes = [
-            link for link in self._causal_links
-            if any(w in link["cause"].lower() for w in ["problem", "issue", "slow", "broken", "failing"])
+            link
+            for link in self._causal_links
+            if any(
+                w in link["cause"].lower()
+                for w in ["problem", "issue", "slow", "broken", "failing"]
+            )
         ]
         for link in unresolved_causes[-2:]:
             suggestions.append(f"Check if resolved: {link['cause'][:60]}")
