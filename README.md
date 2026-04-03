@@ -2,7 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/elo-memory.svg)](https://badge.fury.io/py/elo-memory)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](https://github.com/server-elo/elo-memory/blob/main/LICENSE)
 [![Tests](https://github.com/server-elo/elo-memory/actions/workflows/tests.yml/badge.svg)](https://github.com/server-elo/elo-memory/actions)
 
 **The memory brain for AI agents.** 3 lines to give any LLM persistent memory that knows what to remember, what to forget, what changed, and what's missing.
@@ -229,7 +229,7 @@ User message
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+BSL 1.1 (Business Source License) — free for production use, except offering it as a competing hosted memory service. Converts to Apache 2.0 on 2029-04-03. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 

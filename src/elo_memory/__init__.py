@@ -16,9 +16,9 @@ License: MIT
 
 import logging
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
-__license__ = "MIT"
+__license__ = "BSL-1.1"
 
 # Package-level logger. Defaults to NullHandler (silent) per Python best practice.
 # Users can configure via: logging.getLogger("elo_memory").setLevel(logging.DEBUG)
