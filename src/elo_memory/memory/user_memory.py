@@ -261,6 +261,13 @@ class UserMemory:
     # Conflict / supersession detection
     # ------------------------------------------------------------------
 
+    # Patterns that signal "I got a new X" (implicit replacement)
+    _NEW_THING_RE = re.compile(
+        r"\b(?:just\s+)?(?:got|picked up|bought|received|started using|new)\s+"
+        r"(?:a\s+|an\s+|my\s+(?:new\s+)?)?(.+?)(?:\s*[,.]|\s+(?:yesterday|today|last|this)\b|\s*$)",
+        re.IGNORECASE,
+    )
+
     def _detect_and_supersede(self, text: str, new_episode_id: str):
         """Detect transitional statements and supersede conflicting old memories."""
         text_lower = text.lower()
@@ -278,12 +285,37 @@ class UserMemory:
             m = pattern.search(text)
             if m:
                 trigger = m.group(1).strip().lower()
-                # Normalize multi-word triggers
                 for key, old_values in _IMPLICIT_OLD_VALUES.items():
                     if key in trigger:
                         for old_val in old_values:
                             self._supersede_by_value(old_val, trigger, new_episode_id)
                         break
+
+        # 3. Semantic supersession: "Just got a new Tesla" supersedes
+        # highly similar old memories about the same topic (e.g., "I drive a BMW")
+        m = self._NEW_THING_RE.search(text)
+        if m and len(self._store.episodes) > 1:
+            new_thing = m.group(1).strip()
+            new_emb = self._embed(text)
+            if new_emb is not None:
+                try:
+                    similar = self._store.retrieve_by_similarity(new_emb, k=3)
+                    for ep in similar:
+                        if ep.episode_id == new_episode_id:
+                            continue
+                        if ep.episode_id in self._superseded:
+                            continue
+                        if ep.embedding is None:
+                            continue
+                        import numpy as np
+                        cos = float(np.dot(new_emb, ep.embedding) / (
+                            np.linalg.norm(new_emb) * np.linalg.norm(ep.embedding) + 1e-8
+                        ))
+                        # Moderate similarity (same topic area) + "new" language = supersede
+                        if cos > 0.35:
+                            self._superseded.add(ep.episode_id)
+                except Exception:
+                    pass
 
     def _supersede_by_value(self, old_value: str, new_value: str, new_episode_id: str):
         """Scan ALL episodes for old_value mentions and supersede them."""
