@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .memory.user_memory import UserMemory
 from .memory.knowledge_base import KnowledgeBase
+from .memory.intelligence import MemoryIntelligence
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class EloBrain:
         self._kb = KnowledgeBase(
             persistence_path=str(self._memory._user_dir / "kb"),
         )
+        self._intelligence = MemoryIntelligence()
 
     # ------------------------------------------------------------------
     # Core loop
@@ -139,6 +141,21 @@ class EloBrain:
             for text, score in memories:
                 sections.append(f"- [{score:.2f}] {text}")
 
+        # Why-reasoning: if query looks like a "why" question, find causal links
+        if re.search(r"\bwhy\b", user_message, re.IGNORECASE):
+            reasons = self._intelligence.get_reasons_for(user_message)
+            if reasons:
+                sections.append("\n## Reasons (causal links)")
+                for r in reasons[:3]:
+                    sections.append(f"- {r['cause']} → {r['effect']}")
+
+        # Knowledge gaps: what the brain should know but doesn't
+        all_texts = [t for t, _ in facts]
+        gaps = self._intelligence.detect_gaps(kb_facts, all_texts)
+
+        # Proactive suggestions
+        suggestions = self._intelligence.suggest_next_actions(kb_facts, facts)
+
         system = "\n".join(sections)
 
         return {
@@ -146,6 +163,8 @@ class EloBrain:
             "user_message": user_message,
             "memories_used": len(memories),
             "user_profile": profile,
+            "knowledge_gaps": gaps,
+            "suggestions": suggestions,
         }
 
     # ------------------------------------------------------------------
@@ -164,9 +183,17 @@ class EloBrain:
         # Always update KB (even for questions -- they may contain facts)
         self._kb.update(user_message)
 
+        # Feed intelligence layer: causal links and decisions
+        self._intelligence.extract_causal_links(user_message, "")
+        self._intelligence.track_decision(user_message, "")
+
         # Store user message in episodic memory (unless it's pure filler)
         if not _should_skip(user_message):
-            self._memory.store(user_message)
+            result = self._memory.store(user_message)
+            if result and result.get("episode_id"):
+                # Re-extract with correct episode_id
+                self._intelligence.extract_causal_links(user_message, result["episode_id"])
+                self._intelligence.track_decision(user_message, result["episode_id"])
 
         # Extract and store assistant commitments
         if assistant_response:
@@ -189,6 +216,11 @@ class EloBrain:
             for t in ep.metadata.get("topics", []):
                 all_topics.add(t)
 
+        # Intelligence: gaps, causal chains, suggestions
+        all_texts = [t for t, _ in facts]
+        gaps = self._intelligence.detect_gaps(self._kb.get_all(), all_texts)
+        suggestions = self._intelligence.suggest_next_actions(self._kb.get_all(), facts)
+
         return {
             "knowledge": self._kb.get_all(),
             "facts": facts,
@@ -196,6 +228,10 @@ class EloBrain:
             "topics": sorted(all_topics),
             "total_memories": profile.get("total_memories", 0),
             "superseded": len(self._memory._superseded),
+            "knowledge_gaps": gaps,
+            "suggestions": suggestions,
+            "causal_links": len(self._intelligence._causal_links),
+            "decisions_tracked": len(self._intelligence._decision_chain),
         }
 
     # ------------------------------------------------------------------
