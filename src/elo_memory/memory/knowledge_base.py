@@ -92,8 +92,30 @@ class KnowledgeBase:
             extracted = self._extract_facts(sentence)
             for key, value in extracted.items():
                 key = key.strip().lower()
-                value = value.strip()
-                if not key or not value:
+                # Clean value: strip trailing punctuation and fragments
+                value = value.strip().rstrip(".,;:!?")
+                # Remove trailing "is X" fragments from multi-part extractions
+                value = re.sub(r",\s+\w+\s+is\s+.*$", "", value)
+                # Truncate very long values (likely over-captured)
+                if len(value) > 80:
+                    value = value[:80].rsplit(" ", 1)[0]
+                if not key or not value or len(key) > 50:
+                    continue
+                # Deduplicate: skip if an existing key is a substring of this key
+                # e.g., skip "our nps" if "nps" already exists with same value
+                skip = False
+                for existing_key in list(self._facts.keys()):
+                    if existing_key.startswith("_"):
+                        continue
+                    if key != existing_key and (existing_key in key or key in existing_key):
+                        # Keep the shorter key
+                        if len(key) > len(existing_key):
+                            skip = True
+                            break
+                        else:
+                            # Replace longer key with shorter
+                            del self._facts[existing_key]
+                if skip:
                     continue
                 old = self._facts.get(key)
                 if old != value:

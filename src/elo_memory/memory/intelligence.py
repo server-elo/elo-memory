@@ -103,12 +103,31 @@ class MemoryIntelligence:
         kb_text = " ".join(f"{k} {v}" for k, v in kb_facts.items()).lower()
         all_text_lower = combined_text
 
+        # Synonym groups: any word satisfies the whole group
+        synonyms = {
+            "hosting": {"hosting", "deploy", "deployment", "server", "aws", "gcp", "azure", "heroku", "vercel"},
+            "orchestration": {"orchestration", "kubernetes", "k8s", "docker", "ecs", "eks"},
+            "ci/cd": {"ci/cd", "ci", "cd", "github actions", "jenkins", "circleci", "pipeline"},
+            "monitoring": {"monitoring", "datadog", "grafana", "sentry", "prometheus", "observability"},
+            "database": {"database", "postgresql", "postgres", "mysql", "mongodb", "redis", "db"},
+            "compliance": {"compliance", "soc2", "hipaa", "gdpr", "pci", "iso"},
+            "funding": {"funding", "raised", "series", "seed", "investment"},
+            "revenue": {"revenue", "arr", "mrr", "income", "processing"},
+            "customers": {"customers", "clients", "users", "accounts"},
+            "competitors": {"competitors", "competitor", "competition", "rival"},
+            "stack": {"stack", "backend", "frontend", "framework", "language"},
+            "encryption": {"encryption", "encrypted", "kms", "tls", "ssl"},
+            "auth": {"auth", "authentication", "oauth", "sso", "login"},
+        }
+
         for schema_name in active_schemas:
             schema = _CONTEXT_SCHEMAS[schema_name]
             missing: List[str] = []
             for expected in schema["expected"]:
-                # Check if this concept appears in KB or in any memory
-                if expected not in kb_text and expected not in all_text_lower:
+                # Check if this concept or any synonym appears in KB or memories
+                check_words = synonyms.get(expected, {expected})
+                found = any(w in kb_text or w in all_text_lower for w in check_words)
+                if not found:
                     missing.append(expected)
             if missing:
                 gaps.append({
