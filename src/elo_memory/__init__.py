@@ -11,7 +11,7 @@ Implements EM-LLM (ICLR 2025) with 8 core components:
 - Interference Resolution
 - Online Learning
 
-License: MIT
+License: BSL-1.1
 """
 
 import logging

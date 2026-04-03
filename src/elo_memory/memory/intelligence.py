@@ -316,16 +316,22 @@ class MemoryIntelligence:
         considering = [
             d
             for d in self._decision_chain
-            if "considering" in d["text"].lower() or "thinking" in d["text"].lower()
+            if isinstance(d, dict)
+            and "text" in d
+            and ("considering" in d["text"].lower() or "thinking" in d["text"].lower())
         ]
         for d in considering[-2:]:  # last 2 unresolved
-            suggestions.append(f"Follow up: {d['text'][:60]}...")
+            text_val = d.get("text", "")
+            if text_val:
+                suggestions.append(f"Follow up: {text_val[:60]}...")
 
         # From causal links without resolution
         unresolved_causes = [
             link
             for link in self._causal_links
-            if any(
+            if isinstance(link, dict)
+            and "cause" in link
+            and any(
                 w in link["cause"].lower()
                 for w in ["problem", "issue", "slow", "broken", "failing"]
             )

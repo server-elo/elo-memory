@@ -42,7 +42,7 @@ class OnlineLearner:
     3. Adaptive Thresholds: Adjust novelty/surprise thresholds online
     """
 
-    def __init__(self, config: OnlineLearningConfig = None):
+    def __init__(self, config: Optional[OnlineLearningConfig] = None):
         self.config = config or OnlineLearningConfig()
 
         # Replay buffer (stores important experiences)
@@ -240,44 +240,3 @@ class OnlineLearner:
             "novelty_threshold": self.novelty_threshold,
             "fisher_params": len(self.fisher_information),
         }
-
-
-if __name__ == "__main__":
-    print("=== Online Continual Learning Test ===\n")
-
-    learner = OnlineLearner()
-
-    # Simulate online learning
-    print("Simulating online learning stream...")
-
-    np.random.seed(42)
-    for i in range(100):
-        # Random observation
-        obs = np.random.randn(128)
-
-        # Random surprise (with occasional high-surprise events)
-        surprise = np.random.exponential(0.5)
-        if i % 20 == 0:
-            surprise *= 5.0  # High surprise event
-
-        # Add to replay buffer and update
-        learner.online_update(obs, surprise)
-
-    stats = learner.get_statistics()
-
-    print(f"\nLearning Statistics:")
-    print(f"  Total updates: {stats['total_updates']}")
-    print(f"  Replay count: {stats['replay_count']}")
-    print(f"  Replay buffer size: {stats['replay_buffer_size']}")
-    print(f"  Adaptive surprise threshold: {stats['surprise_threshold']:.3f}")
-    print(f"  Adaptive novelty threshold: {stats['novelty_threshold']:.3f}")
-
-    # Test replay sampling
-    print(f"\nReplay Buffer Statistics:")
-    replay_batch = learner.sample_replay_batch(10)
-    surprises = [exp["surprise"] for exp in replay_batch]
-    print(f"  Sampled batch size: {len(replay_batch)}")
-    print(f"  Mean surprise in batch: {np.mean(surprises):.3f}")
-    print(f"  Max surprise in batch: {np.max(surprises):.3f}")
-
-    print("\n✓ Online learning test complete!")

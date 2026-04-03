@@ -427,9 +427,10 @@ _VERSION_RE = re.compile(r"\b(?:v|version\s*)\d+(?:\.\d+)*\b", re.IGNORECASE)
 _NAME_MULTI_RE = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b")
 
 # Single name after a role word: "Engineer Maria", "wife Julia"
+# Role words matched case-insensitively, but name MUST start with uppercase
 _NAME_ROLE_RE = re.compile(
-    r"\b(" + "|".join(re.escape(w) for w in sorted(_ROLE_WORDS)) + r")" r"\s+([A-Z][a-z]{1,})\b",
-    re.IGNORECASE,
+    r"(?i:\b(?:" + "|".join(re.escape(w) for w in sorted(_ROLE_WORDS)) + r"))"
+    r"\s+([A-Z][a-z]{1,})\b",
 )
 
 
@@ -527,7 +528,7 @@ class EntityExtractor:
 
         # 2) Single name after role word
         for m in _NAME_ROLE_RE.finditer(text):
-            name = m.group(2)
+            name = m.group(1)
             if name not in _SKIP_WORDS and name not in _NOT_NAMES:
                 names.append(name)
 

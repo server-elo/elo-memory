@@ -1,7 +1,7 @@
 """Tests for Two-Stage Retriever — similarity + temporal expansion."""
 import numpy as np
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from elo_memory.memory.episodic_store import EpisodicMemoryConfig, EpisodicMemoryStore
 from elo_memory.retrieval.two_stage_retriever import TwoStageRetriever, RetrievalConfig
 
@@ -45,14 +45,21 @@ class TestBasicRetrieval:
         assert results == []
 
     def test_retrieves_stored_episodes(self, store, retriever):
-        base_time = datetime(2025, 6, 1, 12, 0, 0)
+        base_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        target_emb = _rand_emb()
         for i in range(10):
             store.store_episode(
                 content=np.random.randn(10).astype(np.float32),
                 embedding=_rand_emb(),
                 timestamp=base_time + timedelta(minutes=i * 10),
             )
-        results = retriever.retrieve(query=_rand_emb())
+        # Store one episode with a known embedding so retrieval is guaranteed
+        store.store_episode(
+            content=np.random.randn(10).astype(np.float32),
+            embedding=target_emb,
+            timestamp=base_time + timedelta(minutes=5),
+        )
+        results = retriever.retrieve(query=target_emb)
         assert len(results) > 0
         # Each result is (Episode, score)
         for ep, score in results:

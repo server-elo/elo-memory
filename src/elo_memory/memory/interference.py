@@ -14,6 +14,7 @@ References:
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
+from sklearn.metrics.pairwise import cosine_similarity as _sklearn_cosine
 
 
 @dataclass
@@ -35,7 +36,7 @@ class InterferenceResolver:
     2. Pattern Completion: Reconstruct partial cues
     """
 
-    def __init__(self, config: InterferenceConfig = None):
+    def __init__(self, config: Optional[InterferenceConfig] = None):
         self.config = config or InterferenceConfig()
 
     def detect_interference(
@@ -145,67 +146,9 @@ class InterferenceResolver:
 
         return separated_new, existing_embeddings
 
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    @staticmethod
+    def _cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Compute cosine similarity."""
-        dot_product = np.dot(vec1, vec2)
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
-
-        if norm1 == 0 or norm2 == 0:
+        if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
             return 0.0
-
-        return dot_product / (norm1 * norm2)
-
-
-if __name__ == "__main__":
-    print("=== Interference Resolution Test ===\n")
-
-    resolver = InterferenceResolver()
-
-    # Create test memories
-    np.random.seed(42)
-
-    # Base memory
-    memory1 = np.random.randn(128)
-    memory1 = memory1 / np.linalg.norm(memory1)
-
-    # Very similar memory (high interference)
-    memory2 = memory1 + np.random.randn(128) * 0.1
-    memory2 = memory2 / np.linalg.norm(memory2)
-
-    # Dissimilar memory (no interference)
-    memory3 = np.random.randn(128)
-    memory3 = memory3 / np.linalg.norm(memory3)
-
-    print("Memory similarities:")
-    print(
-        f"  memory1 vs memory2: {resolver._cosine_similarity(memory1, memory2):.3f} (interfering)"
-    )
-    print(f"  memory1 vs memory3: {resolver._cosine_similarity(memory1, memory3):.3f} (separate)\n")
-
-    # Detect interference
-    existing = [memory1, memory3]
-    interfering = resolver.detect_interference(memory2, existing)
-    print(f"Interfering memories detected: {interfering}\n")
-
-    # Apply pattern separation
-    separated = resolver.apply_pattern_separation(memory2, memory1)
-    print("After pattern separation:")
-    print(f"  memory1 vs separated: {resolver._cosine_similarity(memory1, separated):.3f}")
-    print(f"  memory2 vs separated: {resolver._cosine_similarity(memory2, separated):.3f}\n")
-
-    # Test pattern completion
-    partial = memory1 * 0.7 + np.random.randn(128) * 0.1
-    partial = partial / np.linalg.norm(partial)
-    completed = resolver.pattern_complete(partial, [memory1, memory3])
-
-    if completed is not None:
-        print("Pattern completion:")
-        print(
-            f"  Partial cue similarity to memory1: {resolver._cosine_similarity(partial, memory1):.3f}"
-        )
-        print(
-            f"  Completed pattern similarity to memory1: {resolver._cosine_similarity(completed, memory1):.3f}"
-        )
-
-    print("\n✓ Interference resolution test complete!")
+        return float(_sklearn_cosine(vec1.reshape(1, -1), vec2.reshape(1, -1))[0, 0])

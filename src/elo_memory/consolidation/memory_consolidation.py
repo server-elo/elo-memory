@@ -20,9 +20,9 @@ References:
 """
 
 import numpy as np
-from typing import List, Dict, Optional, Tuple
+from typing import Callable, List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import heapq
 from collections import defaultdict
 
@@ -60,13 +60,13 @@ class MemoryConsolidationEngine:
         self.schemas = []  # List of (pattern, frequency, episodes)
 
         # Consolidation stats
-        self.last_consolidation = datetime.now()
+        self.last_consolidation = datetime.now(timezone.utc)
         self.total_replays = 0
         self.schemas_formed = 0
 
     def should_consolidate(self) -> bool:
         """Check if it's time for consolidation cycle."""
-        time_since_last = datetime.now() - self.last_consolidation
+        time_since_last = datetime.now(timezone.utc) - self.last_consolidation
         return time_since_last >= self.config.consolidation_interval
 
     def prioritize_episodes(
@@ -86,14 +86,17 @@ class MemoryConsolidationEngine:
         """
         if priorities is None:
             priorities = np.zeros(len(episodes))
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             for i, ep in enumerate(episodes):
                 # Surprise component
                 surprise_score = ep.surprise if hasattr(ep, "surprise") else 1.0
 
                 # Recency component (more recent = higher priority)
-                time_diff = (now - ep.timestamp).total_seconds()
+                ep_ts = ep.timestamp
+                if ep_ts.tzinfo is None:
+                    ep_ts = ep_ts.replace(tzinfo=timezone.utc)
+                time_diff = (now - ep_ts).total_seconds()
                 recency_score = np.exp(-time_diff / (24 * 3600))  # Decay over days
 
                 # Combined priority
@@ -225,7 +228,7 @@ class MemoryConsolidationEngine:
 
         return schemas
 
-    def consolidate(self, episodes: List, update_callback: Optional[callable] = None) -> Dict:
+    def consolidate(self, episodes: List, update_callback: Optional[Callable] = None) -> Dict:
         """
         Run full consolidation cycle.
 
@@ -267,7 +270,7 @@ class MemoryConsolidationEngine:
 
         # Update stats
         self.total_replays += replay_count
-        self.last_consolidation = datetime.now()
+        self.last_consolidation = datetime.now(timezone.utc)
 
         return {
             "episodes_consolidated": len(prioritized_episodes),
@@ -290,79 +293,3 @@ class MemoryConsolidationEngine:
             }
             summaries.append(summary)
         return summaries
-
-
-if __name__ == "__main__":
-    print("=== Memory Consolidation Test ===\n")
-
-    # Mock episodes for testing
-    from datetime import datetime, timedelta
-
-    class MockEpisode:
-        def __init__(self, episode_id, location, entities, surprise, timestamp):
-            self.episode_id = episode_id
-            self.location = location
-            self.entities = entities
-            self.surprise = surprise
-            self.timestamp = timestamp
-
-    # Create test episodes
-    base_time = datetime.now() - timedelta(days=1)
-    episodes = []
-
-    # Pattern 1: Frequent meetings in conference room
-    for i in range(10):
-        ep = MockEpisode(
-            episode_id=f"meeting_{i}",
-            location="conference_room",
-            entities=["Alice", "Bob", "self"],
-            surprise=2.0 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i),
-        )
-        episodes.append(ep)
-
-    # Pattern 2: Solo work in office
-    for i in range(15):
-        ep = MockEpisode(
-            episode_id=f"work_{i}",
-            location="office",
-            entities=["self"],
-            surprise=0.5 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i, minutes=30),
-        )
-        episodes.append(ep)
-
-    # Pattern 3: Lunch at cafe
-    for i in range(8):
-        ep = MockEpisode(
-            episode_id=f"lunch_{i}",
-            location="cafe",
-            entities=["self", "Charlie"],
-            surprise=1.0 + np.random.rand(),
-            timestamp=base_time + timedelta(hours=i + 12),
-        )
-        episodes.append(ep)
-
-    # Initialize consolidation engine
-    engine = MemoryConsolidationEngine()
-
-    print(f"Created {len(episodes)} test episodes\n")
-
-    # Run consolidation
-    stats = engine.consolidate(episodes)
-
-    print("Consolidation Statistics:")
-    print(f"  Episodes consolidated: {stats['episodes_consolidated']}")
-    print(f"  Replay count: {stats['replay_count']}")
-    print(f"  Schemas extracted: {stats['schemas_extracted']}")
-    print(f"  Total schemas: {stats['total_schemas']}")
-
-    # Display schemas
-    print("\nExtracted Schemas:")
-    for i, schema in enumerate(engine.get_schema_summary(), 1):
-        print(f"\n  Schema {i}: {schema['pattern']}")
-        print(f"    Frequency: {schema['frequency']} episodes")
-        print(f"    Common entities: {schema['common_entities']}")
-        print(f"    Importance: {schema['importance']:.2f}")
-
-    print("\nConsolidation test complete!")

@@ -381,13 +381,15 @@ class TestQueryCache:
         r2 = store.retrieve_by_similarity(query, k=3)
         assert [ep.episode_id for ep in r1] == [ep.episode_id for ep in r2]
 
-    def test_cache_invalidated_on_store(self, store):
+    def test_cache_survives_new_store(self, store):
+        """Cache uses LRU eviction, not blanket clear on every store."""
         store.store_episode(content=_rand_content(), embedding=_rand_embedding())
         query = _rand_embedding()
         store.retrieve_by_similarity(query, k=1)
         assert len(store._query_cache) > 0
         store.store_episode(content=_rand_content(), embedding=_rand_embedding())
-        assert len(store._query_cache) == 0
+        # Cache entries survive new stores (LRU handles staleness)
+        assert len(store._query_cache) > 0
 
     def test_cache_skipped_with_filters(self, store):
         store.store_episode(content=_rand_content(), embedding=_rand_embedding(), location="lab")

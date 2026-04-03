@@ -14,33 +14,6 @@ def engine():
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# PredictiveModel
-# ---------------------------------------------------------------------------
-
-class TestPredictiveModel:
-    def test_forward_output_shapes(self):
-        import torch
-        from elo_memory.surprise.bayesian_surprise import PredictiveModel
-        model = PredictiveModel(input_dim=8, hidden_dim=16, num_layers=1)
-        x = torch.randn(1, 5, 8)  # batch=1, seq_len=5, input_dim=8
-        mean, logvar, hidden = model.forward(x)
-        assert mean.shape == (1, 8)
-        assert logvar.shape == (1, 8)
-        assert hidden is not None
-
-    def test_forward_with_hidden_state(self):
-        import torch
-        from elo_memory.surprise.bayesian_surprise import PredictiveModel
-        model = PredictiveModel(input_dim=8, hidden_dim=16, num_layers=1)
-        x = torch.randn(1, 3, 8)
-        _, _, hidden = model.forward(x)
-        # Feed hidden state back in
-        x2 = torch.randn(1, 2, 8)
-        mean, logvar, hidden2 = model.forward(x2, hidden)
-        assert mean.shape == (1, 8)
-
-
-# ---------------------------------------------------------------------------
 # Basic initialization and stepping
 # ---------------------------------------------------------------------------
 

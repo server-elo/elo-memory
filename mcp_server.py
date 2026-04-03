@@ -8,7 +8,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from elo_memory import (
@@ -46,17 +46,30 @@ def _load_embedding_model(model_name: str = 'BAAI/bge-small-en-v1.5', retries: i
     logger.warning("All embedding model load attempts failed, using hash embeddings")
     return None
 
-EMBEDDING_MODEL = _load_embedding_model()
-if EMBEDDING_MODEL is not None:
-    EMBEDDING_DIM = EMBEDDING_MODEL.get_sentence_embedding_dimension()
-else:
-    logger.info("Using hash embeddings (dim=%d)", EMBEDDING_DIM)
+_embedding_model_loaded = False
+
+
+def _ensure_embedding_model():
+    """Lazy-load embedding model on first use, not at import time."""
+    global EMBEDDING_MODEL, EMBEDDING_DIM, _embedding_model_loaded
+    if _embedding_model_loaded:
+        return
+    _embedding_model_loaded = True
+    EMBEDDING_MODEL = _load_embedding_model()
+    if EMBEDDING_MODEL is not None:
+        EMBEDDING_DIM = EMBEDDING_MODEL.get_sentence_embedding_dimension()
+    else:
+        logger.info("Using hash embeddings (dim=%d)", EMBEDDING_DIM)
 
 
 class NeuroMemoryMCP:
     """MCP Server for Elo Memory"""
 
+    MAX_CONTENT_SIZE = 10_000  # Maximum characters per memory content
+    MAX_K = 100  # Maximum number of results per retrieval
+
     def __init__(self, input_dim: int = None):
+        _ensure_embedding_model()
         self.input_dim = input_dim or EMBEDDING_DIM
 
         # Initialize components
@@ -97,6 +110,10 @@ class NeuroMemoryMCP:
         """Store a new memory episode (embedding optional, auto-generated if not provided)"""
         if not content or not isinstance(content, str):
             raise ValueError("content must be a non-empty string")
+        if len(content) > self.MAX_CONTENT_SIZE:
+            raise ValueError(
+                f"content too large: {len(content)} chars (max {self.MAX_CONTENT_SIZE})"
+            )
         embedding_array = self._get_embedding(content, embedding)
 
         # Compute surprise (for scoring, not gating)
@@ -109,7 +126,7 @@ class NeuroMemoryMCP:
             content={"text": content, "metadata": metadata or {}},
             embedding=embedding_array,
             surprise=surprise_val,
-            timestamp=datetime.now()
+            timestamp=datetime.now(timezone.utc)
         )
         return {
             "stored": True,
@@ -121,15 +138,18 @@ class NeuroMemoryMCP:
     def retrieve_memories(self, query: str = None, query_embedding: List[float] = None, k: int = 5) -> List[Dict]:
         """Retrieve relevant memories (query text or embedding, one required)"""
         if k < 1:
-            return {"error": "k must be >= 1"}
+            raise ValueError("k must be >= 1")
+        k = min(k, self.MAX_K)
         if query_embedding is not None:
             query_array = np.array(query_embedding, dtype=np.float32)
             if query_array.shape != (self.input_dim,):
-                return {"error": f"Embedding dimension mismatch: got {query_array.shape[0]}, expected {self.input_dim}"}
+                raise ValueError(
+                    f"Embedding dimension mismatch: got {query_array.shape[0]}, expected {self.input_dim}"
+                )
         elif query is not None:
             query_array = self._get_embedding(query)
         else:
-            return {"error": "Either query or query_embedding required"}
+            raise ValueError("Either query or query_embedding required")
 
         self.retriever.config.max_retrieved = k
         results = self.retriever.retrieve(query=query_array)
@@ -165,14 +185,19 @@ class NeuroMemoryMCP:
         }
 
 
+import threading
+_mcp_lock = threading.Lock()
+_mcp_instance: Optional[NeuroMemoryMCP] = None
+
+
 def handle_request(request: Dict) -> Dict:
     """Handle MCP tool request"""
-
-    # Global instance (in real MCP, this would be session-based)
-    if not hasattr(handle_request, 'instance'):
-        handle_request.instance = NeuroMemoryMCP()
-
-    mcp = handle_request.instance
+    global _mcp_instance
+    if _mcp_instance is None:
+        with _mcp_lock:
+            if _mcp_instance is None:
+                _mcp_instance = NeuroMemoryMCP()
+    mcp = _mcp_instance
     method = request.get('method')
     params = request.get('params', {})
 

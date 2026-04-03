@@ -20,7 +20,7 @@ Key Algorithms:
 import logging
 import warnings
 import numpy as np
-from typing import List, Optional, Tuple, Dict
+from typing import Any, List, Optional, Tuple, Dict
 from dataclasses import dataclass
 from collections import deque
 import networkx as nx
@@ -376,7 +376,7 @@ class EventSegmenter:
 
     def segment(
         self, observations: np.ndarray, surprise_values: Optional[np.ndarray] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Segment observations into coherent events.
 
@@ -495,44 +495,3 @@ class EventSegmenter:
             confidences.append(confidence)
 
         return confidences
-
-
-if __name__ == "__main__":
-    print("=== Event Segmentation Test ===\n")
-
-    # Generate synthetic sequence with clear event structure
-    np.random.seed(42)
-
-    # Event 1: Cluster at origin
-    event1 = np.random.randn(40, 10) * 0.5
-    # Event 2: Cluster at (5, 5, ...)
-    event2 = np.random.randn(30, 10) * 0.5 + 5.0
-    # Event 3: Cluster at origin again
-    event3 = np.random.randn(40, 10) * 0.5
-    # Event 4: Cluster at (-3, -3, ...)
-    event4 = np.random.randn(30, 10) * 0.5 - 3.0
-
-    observations = np.vstack([event1, event2, event3, event4])
-
-    # Generate surprise values (peaks at boundaries)
-    surprise_values = np.random.rand(len(observations)) * 0.5
-    surprise_values[38:42] += 3.0  # Boundary 1
-    surprise_values[68:72] += 3.0  # Boundary 2
-    surprise_values[108:112] += 3.0  # Boundary 3
-
-    # Initialize segmenter
-    segmenter = EventSegmenter()
-
-    # Perform segmentation
-    result = segmenter.segment(observations, surprise_values)
-
-    print(f"Detected {result['n_events']} events")
-    print(f"Boundaries: {result['boundaries']}")
-    print(f"Ground truth: [40, 70, 110]")
-    print(f"\nBoundary confidences: {[f'{c:.2f}' for c in result['confidence']]}")
-
-    # Show event statistics
-    for i, event in enumerate(result["events"]):
-        print(f"\nEvent {i+1}:")
-        print(f"  Length: {len(event)}")
-        print(f"  Mean: {np.mean(event, axis=0)[:3]}...")  # First 3 dims

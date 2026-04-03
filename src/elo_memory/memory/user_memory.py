@@ -13,7 +13,7 @@ import re
 import uuid
 import filelock
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -339,18 +339,38 @@ class UserMemory:
 
     def _get_embedder(self):
         if self._embedder is None:
-            from sentence_transformers import SentenceTransformer
-
-            self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        return self._embedder
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
+            except ImportError:
+                logger.warning(
+                    "sentence-transformers not installed, using hash-based embeddings. "
+                    "Install with: pip install sentence-transformers"
+                )
+                self._embedder = False  # Sentinel to avoid repeated import attempts
+        return self._embedder if self._embedder else None
 
     def _embed(self, text: str) -> np.ndarray:
         model = self._get_embedder()
-        vec = model.encode(text, convert_to_numpy=True)
+        if model is not None:
+            vec = model.encode(text, convert_to_numpy=True)
+        else:
+            # Hash-based fallback
+            vec = self._hash_embedding(text)
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
         return vec.astype(np.float32)
+
+    @staticmethod
+    def _hash_embedding(text: str, dim: int = 384) -> np.ndarray:
+        """Simple hash-based embedding fallback."""
+        arr = np.zeros(dim)
+        for i, char in enumerate(text):
+            idx = (ord(char) * (i + 1)) % dim
+            arr[idx] += np.sin(ord(char) * 0.1) * 0.5
+        norm = np.linalg.norm(arr)
+        return arr / norm if norm > 0 else arr
 
     # ------------------------------------------------------------------
     # Topic detection
@@ -372,9 +392,23 @@ class UserMemory:
     # ------------------------------------------------------------------
 
     def _is_near_duplicate(self, embedding: np.ndarray) -> bool:
-        """Check if embedding is too similar to an existing episode."""
-        for ep in self._store.episodes:
-            if ep.embedding is not None and ep.episode_id not in self._superseded:
+        """Check if embedding is too similar to an existing episode.
+
+        Uses vector DB for large stores (O(log n)), falls back to direct
+        scan for small stores to avoid interference-resolution artefacts.
+        """
+        episodes = self._store.episodes
+        if len(episodes) <= 200:
+            # Direct scan is cheap and avoids interference-distorted embeddings
+            candidates = episodes
+        else:
+            # Use vector DB for large stores
+            candidates = self._store.retrieve_by_similarity(embedding, k=5)
+
+        for ep in candidates:
+            if ep.episode_id in self._superseded:
+                continue
+            if ep.embedding is not None:
                 sim = float(np.dot(embedding, ep.embedding))
                 if sim > self.DUPLICATE_COSINE_THRESHOLD:
                     return True
@@ -430,14 +464,12 @@ class UserMemory:
                             continue
                         if ep.embedding is None:
                             continue
-                        import numpy as np
-
                         cos = float(
                             np.dot(new_emb, ep.embedding)
                             / (np.linalg.norm(new_emb) * np.linalg.norm(ep.embedding) + 1e-8)
                         )
                         # Moderate similarity (same topic area) + "new" language = supersede
-                        if cos > 0.35:
+                        if cos > 0.7:
                             self._superseded.add(ep.episode_id)
                 except Exception:
                     pass
@@ -505,7 +537,7 @@ class UserMemory:
             raise ValueError("text must not be empty or whitespace-only")
 
         with self._lock:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             self._last_seen = now.isoformat()
             if self._first_seen is None:
                 self._first_seen = now.isoformat()
@@ -667,7 +699,7 @@ class UserMemory:
         self._sessions.append(
             {
                 "session_id": self._session_id,
-                "ended": datetime.now().isoformat(),
+                "ended": datetime.now(timezone.utc).isoformat(),
             }
         )
         self._session_id = str(uuid.uuid4())

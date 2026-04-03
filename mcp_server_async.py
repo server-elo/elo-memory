@@ -14,7 +14,7 @@ import logging
 import sys
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -73,19 +73,24 @@ class AsyncEmbeddingClient:
         self.session: Optional[aiohttp.ClientSession] = None
         self.executor = ThreadPoolExecutor(max_workers=4)
 
+    _session_lock: Optional[asyncio.Lock] = None
+
     async def get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session (connection pooling)"""
-        if self.session is None or self.session.closed:
-            timeout = aiohttp.ClientTimeout(total=30)
-            connector = aiohttp.TCPConnector(
-                limit=100,  # Connection pool size
-                limit_per_host=20,
-                ttl_dns_cache=300
-            )
-            self.session = aiohttp.ClientSession(
-                timeout=timeout,
-                connector=connector
-            )
+        """Get or create HTTP session (connection pooling, thread-safe)."""
+        if self._session_lock is None:
+            self._session_lock = asyncio.Lock()
+        async with self._session_lock:
+            if self.session is None or self.session.closed:
+                timeout = aiohttp.ClientTimeout(total=30)
+                connector = aiohttp.TCPConnector(
+                    limit=100,
+                    limit_per_host=20,
+                    ttl_dns_cache=300
+                )
+                self.session = aiohttp.ClientSession(
+                    timeout=timeout,
+                    connector=connector
+                )
         return self.session
 
     async def get_embedding(self, text: str) -> np.ndarray:
@@ -188,6 +193,7 @@ class AsyncNeuroMemoryMCP:
 
         # Schedule backfill of missing embeddings (runs after event loop starts)
         self._backfill_scheduled = True
+        self._backfill_task: Optional[asyncio.Task] = None
 
     async def _backfill_embeddings(self):
         """Re-embed episodes that are missing from ChromaDB and sync."""
@@ -196,7 +202,7 @@ class AsyncNeuroMemoryMCP:
         self._backfill_scheduled = False
 
         existing_ids = set()
-        if self.memory.collection.count() > 0:
+        if self.memory.collection is not None and self.memory.collection.count() > 0:
             existing_ids = set(self.memory.collection.get()["ids"])
 
         missing = [ep for ep in self.memory.episodes if ep.episode_id not in existing_ids]
@@ -268,7 +274,7 @@ class AsyncNeuroMemoryMCP:
             content={"text": content, "metadata": metadata or {}},
             embedding=embedding_array,
             surprise=surprise_val,
-            timestamp=datetime.now()
+            timestamp=datetime.now(timezone.utc)
         )
 
         # Save to disk immediately
@@ -294,6 +300,10 @@ class AsyncNeuroMemoryMCP:
         """
         if not items:
             return []
+        # Validate all items have 'content'
+        for i, item in enumerate(items):
+            if "content" not in item or not isinstance(item["content"], str):
+                raise ValueError(f"Item {i} missing required 'content' string field")
         # Extract texts for batch embedding
         texts = [item['content'] for item in items]
 
@@ -312,7 +322,7 @@ class AsyncNeuroMemoryMCP:
                 content={"text": item['content'], "metadata": item.get('metadata', {})},
                 embedding=embedding_array,
                 surprise=surprise_val,
-                timestamp=datetime.now()
+                timestamp=datetime.now(timezone.utc)
             )
             results.append({
                 "id": item_id,
@@ -340,15 +350,17 @@ class AsyncNeuroMemoryMCP:
     ) -> List[Dict]:
         """Retrieve relevant memories (async)"""
         if k < 1:
-            return {"error": "k must be >= 1"}
+            raise ValueError("k must be >= 1")
         if query_embedding is not None:
             query_array = np.array(query_embedding, dtype=np.float32)
             if query_array.shape != (self.input_dim,):
-                return {"error": f"Embedding dimension mismatch: got {query_array.shape[0]}, expected {self.input_dim}"}
+                raise ValueError(
+                    f"Embedding dimension mismatch: got {query_array.shape[0]}, expected {self.input_dim}"
+                )
         elif query is not None:
             query_array = await self.get_embedding(query)
         else:
-            return {"error": "Either query or query_embedding required"}
+            raise ValueError("Either query or query_embedding required")
 
         self.retriever.config.max_retrieved = k
         results = self.retriever.retrieve(query=query_array)
@@ -446,8 +458,11 @@ class AsyncMCPServer:
         await self.initialize()
 
         # Backfill missing embeddings in the background
+        self._background_tasks: List[asyncio.Task] = []
         if self.mcp and getattr(self.mcp, '_backfill_scheduled', False):
-            asyncio.ensure_future(self.mcp._backfill_embeddings())
+            task = asyncio.create_task(self.mcp._backfill_embeddings())
+            self.mcp._backfill_task = task
+            self._background_tasks.append(task)
 
         loop = asyncio.get_event_loop()
 
@@ -485,12 +500,13 @@ class AsyncMCPServer:
             logger.info("Shutting down")
         finally:
             # Save memory state to disk before exit
-            try:
-                self.mcp.memory.save_state()
-                logger.info("Saved %d episodes to disk", len(self.mcp.memory.episodes))
-            except Exception as e:
-                logger.error("Failed to save state on shutdown: %s", e)
-            await self.mcp.close()
+            if self.mcp is not None:
+                try:
+                    self.mcp.memory.save_state()
+                    logger.info("Saved %d episodes to disk", len(self.mcp.memory.episodes))
+                except Exception as e:
+                    logger.error("Failed to save state on shutdown: %s", e)
+                await self.mcp.close()
 
 
 async def main():

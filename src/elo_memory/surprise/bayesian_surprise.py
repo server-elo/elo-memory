@@ -21,13 +21,6 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
 
-try:
-    import torch
-    import torch.nn as nn
-
-    _TORCH_AVAILABLE = True
-except ImportError:
-    _TORCH_AVAILABLE = False
 from scipy.stats import entropy
 
 
@@ -41,56 +34,8 @@ class SurpriseConfig:
     use_adaptive_threshold: bool = True  # Adapt threshold based on surprise distribution
     min_observations: int = 5  # Minimum observations before calculating surprise
     smoothing_alpha: float = 0.1  # Exponential moving average smoothing
-    hidden_dim: int = 256  # LSTM hidden dimension for predictive model
-    num_layers: int = 2  # LSTM layer count for predictive model
-    learning_rate: float = 0.001  # Optimizer learning rate for predictive model
     surprise_history_len: int = 100  # Window for adaptive threshold statistics
     observation_noise: float = 0.1  # Assumed observation variance for Bayesian update
-
-
-class PredictiveModel(nn.Module):
-    """
-    Neural predictive model for estimating next-state distributions.
-    Uses a simple LSTM to predict future states given current context.
-    """
-
-    def __init__(self, input_dim: int, hidden_dim: int = 256, num_layers: int = 2):
-        super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=0.1 if num_layers > 1 else 0.0,
-        )
-
-        # Output layer predicts distribution parameters (mean, log_var)
-        self.fc_mean = nn.Linear(hidden_dim, input_dim)
-        self.fc_logvar = nn.Linear(hidden_dim, input_dim)
-
-    def forward(self, x: torch.Tensor, hidden=None) -> Tuple[torch.Tensor, torch.Tensor, any]:
-        """
-        Args:
-            x: Input tensor [batch_size, seq_len, input_dim]
-            hidden: Hidden state from previous step
-
-        Returns:
-            mean: Predicted mean [batch_size, input_dim]
-            logvar: Predicted log variance [batch_size, input_dim]
-            hidden: Updated hidden state
-        """
-        lstm_out, hidden = self.lstm(x, hidden)
-
-        # Take last timestep output
-        last_output = lstm_out[:, -1, :]
-
-        mean = self.fc_mean(last_output)
-        logvar = self.fc_logvar(last_output)
-
-        return mean, logvar, hidden
 
 
 class BayesianSurpriseEngine:
@@ -118,16 +63,6 @@ class BayesianSurpriseEngine:
         """
         self.input_dim = input_dim
         self.config = config or SurpriseConfig()
-
-        # Predictive model for next-state estimation
-        self.predictive_model = PredictiveModel(
-            input_dim,
-            hidden_dim=self.config.hidden_dim,
-            num_layers=self.config.num_layers,
-        )
-        self.optimizer = torch.optim.Adam(
-            self.predictive_model.parameters(), lr=self.config.learning_rate
-        )
 
         # Observation history (sliding window for prior estimation)
         self.observation_history = deque(maxlen=self.config.window_size)
@@ -378,11 +313,12 @@ class BayesianSurpriseEngine:
 
         if method == "peaks":
             # Find local maxima in surprise signal
+            local_mean = np.mean(surprise_values) if surprise_values else self.mean_surprise
             for i in range(1, len(surprise_values) - 1):
                 if (
                     surprise_values[i] > surprise_values[i - 1]
                     and surprise_values[i] > surprise_values[i + 1]
-                    and surprise_values[i] > self.mean_surprise
+                    and surprise_values[i] > local_mean
                 ):
                     boundaries.append(i)
         else:  # threshold
@@ -402,62 +338,3 @@ class BayesianSurpriseEngine:
         self.mean_surprise = 0.0
         self.std_surprise = 1.0
 
-    def update_statistics(self, surprise: float):
-        """
-        Update running statistics for surprise.
-
-        Args:
-            surprise: New surprise value
-        """
-        self.step_count += 1
-        self.total_surprise += surprise
-        self.mean_surprise = self.total_surprise / self.step_count
-
-        # Update std (running variance)
-        if len(self.surprise_history) > 1:
-            self.std_surprise = np.std(self.surprise_history)
-
-
-if __name__ == "__main__":
-    # Example usage and testing
-    print("=== Bayesian Surprise Engine Test ===\n")
-
-    # Create synthetic data with event structure
-    np.random.seed(42)
-    input_dim = 10
-
-    # Generate sequence with clear event boundaries
-    # Event 1: Low values
-    event1 = np.random.randn(50, input_dim) * 0.5
-    # Event 2: High values (surprise!)
-    event2 = np.random.randn(30, input_dim) * 0.5 + 5.0
-    # Event 3: Back to low values
-    event3 = np.random.randn(50, input_dim) * 0.5
-
-    sequence = np.vstack([event1, event2, event3])
-
-    # Initialize surprise engine
-    engine = BayesianSurpriseEngine(input_dim=input_dim)
-
-    # Process sequence
-    results = engine.process_sequence([obs for obs in sequence])
-
-    # Extract surprise values
-    surprise_values = [r["surprise"] for r in results]
-    novelty_flags = [r["is_novel"] for r in results]
-
-    # Detect event boundaries
-    boundaries = engine.get_event_boundaries(surprise_values, method="peaks")
-
-    print(f"Processed {len(sequence)} observations")
-    print(f"Mean surprise: {engine.mean_surprise:.4f}")
-    print(f"Std surprise: {engine.std_surprise:.4f}")
-    print(f"Novel observations: {sum(novelty_flags)}/{len(novelty_flags)}")
-    print(f"\nDetected event boundaries at indices: {boundaries}")
-    print(f"(Ground truth boundaries: ~50, ~80)")
-
-    # Display surprise peaks
-    print("\nTop 10 highest surprise values:")
-    sorted_indices = np.argsort(surprise_values)[::-1][:10]
-    for idx in sorted_indices:
-        print(f"  Index {idx}: surprise = {surprise_values[idx]:.4f}")

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 from .memory.user_memory import UserMemory
@@ -69,7 +70,7 @@ def _extract_commitments(text: str) -> List[str]:
     commitments = []
     for pattern in _COMMITMENT_PATTERNS:
         for m in pattern.finditer(text):
-            commitments.append(m.group(0).strip())
+            commitments.append(m.group(1).strip())
     return commitments
 
 
@@ -118,15 +119,21 @@ class EloBrain:
         """Build an enriched prompt with memory context.
 
         Returns dict with keys: system, user_message, memories_used, user_profile.
+        Runs independent lookups in parallel for lower latency.
         """
-        # KB query first (instant structured answer)
-        kb_answer = self._kb.query(user_message)
-        kb_facts = self._kb.get_all()
+        # Run independent lookups concurrently
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            fut_kb_answer = pool.submit(self._kb.query, user_message)
+            fut_kb_facts = pool.submit(self._kb.get_all)
+            fut_memories = pool.submit(self._memory.recall, user_message, k)
+            fut_facts = pool.submit(self._memory.get_facts)
+            fut_profile = pool.submit(self._memory.get_profile)
 
-        # Episode recall
-        memories = self._memory.recall(user_message, k=k)
-        facts = self._memory.get_facts()
-        profile = self._memory.get_profile()
+            kb_answer = fut_kb_answer.result()
+            kb_facts = fut_kb_facts.result()
+            memories = fut_memories.result()
+            facts = fut_facts.result()
+            profile = fut_profile.result()
 
         # Build system prompt sections
         sections = [self._system_prompt]
@@ -186,23 +193,22 @@ class EloBrain:
         # Always update KB (even for questions -- they may contain facts)
         self._kb.update(user_message)
 
-        # Feed intelligence layer: causal links and decisions
-        self._intelligence.extract_causal_links(user_message, "")
-        self._intelligence.track_decision(user_message, "")
-
         # Store user message in episodic memory (unless it's pure filler)
         if not _should_skip(user_message):
             result = self._memory.store(user_message)
-            if result and result.get("episode_id"):
-                # Re-extract with correct episode_id
-                self._intelligence.extract_causal_links(user_message, result["episode_id"])
-                self._intelligence.track_decision(user_message, result["episode_id"])
+            episode_id = (result or {}).get("episode_id", "")
+            # Feed intelligence layer with the real episode_id
+            self._intelligence.extract_causal_links(user_message, episode_id)
+            self._intelligence.track_decision(user_message, episode_id)
 
-        # Extract and store assistant commitments
+        # Extract and store assistant commitments (dedup via near-duplicate check)
         if assistant_response:
             commitments = _extract_commitments(assistant_response)
+            seen = set()
             for commitment in commitments:
-                self._memory.store(f"[assistant commitment] {commitment}")
+                if commitment not in seen:
+                    seen.add(commitment)
+                    self._memory.store(f"[assistant commitment] {commitment}")
 
     # ------------------------------------------------------------------
     # Introspection
@@ -213,9 +219,11 @@ class EloBrain:
         facts = self._memory.get_facts()
         profile = self._memory.get_profile()
 
-        # Collect topics
+        # Collect topics (excluding superseded episodes)
         all_topics: set[str] = set()
         for ep in self._memory._store.episodes:
+            if ep.episode_id in self._memory._superseded:
+                continue
             for t in ep.metadata.get("topics", []):
                 all_topics.add(t)
 
@@ -242,13 +250,33 @@ class EloBrain:
     # ------------------------------------------------------------------
 
     def forget(self, text: str):
-        """Supersede any memories matching *text* (GDPR erasure)."""
+        """Supersede any memories matching *text* (GDPR erasure).
+
+        Uses the UserMemory supersession API so that offloaded episodes
+        are properly handled and state is persisted.
+        """
         text_lower = text.lower()
-        for ep in self._memory._store.episodes:
-            ep_text = self._memory._episode_text(ep).lower()
-            if text_lower in ep_text:
-                self._memory._superseded.add(ep.episode_id)
-        self._memory.save()
+        with self._memory._lock:
+            # Scan in-memory episodes
+            for ep in self._memory._store.episodes:
+                ep_text = self._memory._episode_text(ep).lower()
+                if text_lower in ep_text:
+                    self._memory._superseded.add(ep.episode_id)
+            # Scan offloaded episodes on disk
+            if self._memory._store.config.enable_disk_offload and self._memory._store.persistence_path:
+                offload_dir = self._memory._store.persistence_path / "offloaded"
+                if offload_dir.exists():
+                    import pickle
+                    for pkl_file in offload_dir.glob("*.pkl"):
+                        try:
+                            with open(pkl_file, "rb") as f:
+                                ep = pickle.load(f)
+                            ep_text = self._memory._episode_text(ep).lower()
+                            if text_lower in ep_text:
+                                self._memory._superseded.add(ep.episode_id)
+                        except Exception:
+                            pass
+            self._memory.save()
 
     # ------------------------------------------------------------------
     # Lifecycle

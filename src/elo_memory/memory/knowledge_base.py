@@ -1,7 +1,8 @@
-"""Domain-agnostic structured knowledge store.
+"""Structured knowledge store.
 
 Extracts subject-predicate-object facts from natural language.
-Works for ANY domain - tech, personal, medical, legal, anything.
+Ships with optional tech-domain hints (category words, product mappings,
+compliance keywords) that can be replaced or cleared for other domains.
 
 This was the key feature that took recall from 54% to 100%.
 """
@@ -14,8 +15,9 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-# Category words used to infer KB keys from transition sentences
-_CATEGORY_WORDS = {
+# Default category words used to infer KB keys from transition sentences.
+# Pass custom sets to KnowledgeBase() to override for non-tech domains.
+_DEFAULT_CATEGORY_WORDS = {
     "backend",
     "frontend",
     "database",
@@ -48,8 +50,9 @@ _CATEGORY_WORDS = {
     "infrastructure",
 }
 
-# Well-known tech values → their category (used when context is ambiguous)
-_VALUE_TO_CATEGORY = {
+# Default tech value→category mapping (used when context is ambiguous).
+# Pass custom dicts to KnowledgeBase() to override for non-tech domains.
+_DEFAULT_VALUE_TO_CATEGORY = {
     "kubernetes": "orchestration",
     "k8s": "orchestration",
     "docker": "container",
@@ -91,8 +94,9 @@ _VALUE_TO_CATEGORY = {
     "vue": "frontend",
 }
 
-# Compliance / certification keywords
-_COMPLIANCE_KEYWORDS = {
+# Default compliance / certification keywords.
+# Pass custom sets to KnowledgeBase() to override for non-tech domains.
+_DEFAULT_COMPLIANCE_KEYWORDS = {
     "soc2",
     "soc 2",
     "hipaa",
@@ -124,16 +128,26 @@ _IDENTITY_KEYWORDS = {
 
 
 class KnowledgeBase:
-    """Domain-agnostic structured knowledge store.
+    """Structured knowledge store with configurable domain hints.
 
     Extracts subject-predicate-object facts from natural language.
-    Works for ANY domain -- tech, personal, medical, legal, anything.
+    Ships with tech-domain defaults; pass custom category_words,
+    value_to_category, and compliance_keywords for other domains.
     """
 
-    def __init__(self, persistence_path: Optional[str] = None):
+    def __init__(
+        self,
+        persistence_path: Optional[str] = None,
+        category_words: Optional[set] = None,
+        value_to_category: Optional[Dict[str, str]] = None,
+        compliance_keywords: Optional[set] = None,
+    ):
         self._facts: Dict[str, str] = {}
         self._history: List[Dict] = []
         self._persistence_path = persistence_path
+        self._category_words = category_words if category_words is not None else _DEFAULT_CATEGORY_WORDS
+        self._value_to_category = value_to_category if value_to_category is not None else _DEFAULT_VALUE_TO_CATEGORY
+        self._compliance_keywords = compliance_keywords if compliance_keywords is not None else _DEFAULT_COMPLIANCE_KEYWORDS
         if persistence_path:
             self._load()
 
@@ -263,8 +277,11 @@ class KnowledgeBase:
             if not line:
                 continue
             # Split on ". " (period followed by space) or period at end
-            # but preserve email addresses and URLs
-            parts = re.split(r"(?<!\w\.\w)(?<![A-Z][a-z])\.(?:\s|$)", line)
+            # but preserve email addresses, URLs, and abbreviations
+            # First protect abbreviations by replacing them temporarily
+            protected = re.sub(r"\b(e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms)\.", r"\1<DOT>", line)
+            parts = re.split(r"(?<!\w\.\w)(?<![A-Z][a-z])\.(?:\s|$)", protected)
+            parts = [p.replace("<DOT>", ".") for p in parts]
             for p in parts:
                 p = p.strip()
                 if p:
@@ -375,7 +392,8 @@ class KnowledgeBase:
 
         # --- Pattern 6c: Corrections: "Actually X is Y" / "X is actually Y" ---
         correction = re.search(
-            r"[Aa]ctually\s+(?:my\s+)?(\S+(?:\s+\S+)?)\s+is\s+(.+?)(?:\s*,|\s*$)", s
+            r"[Aa]ctually\s+(?:(?:my|our|the|his|her|their|its)\s+)?(\S+(?:\s+\S+)?)\s+is\s+(.+?)(?:\s*,|\s*$)",
+            s,
         )
         if correction:
             facts[correction.group(1).strip().lower()] = correction.group(2).strip()
@@ -420,7 +438,7 @@ class KnowledgeBase:
                 continue
             # "Django backend" or "React frontend" — value should be 1-3 words max,
             # not a full clause like "Hired Jake for frontend"
-            for cat in _CATEGORY_WORDS:
+            for cat in self._category_words:
                 pattern = re.compile(
                     rf"^(\S+(?:\s+\S+)?)\s+{re.escape(cat)}$",
                     re.IGNORECASE,
@@ -458,14 +476,14 @@ class KnowledgeBase:
 
         # Check context phrase first
         if context:
-            for cat in _CATEGORY_WORDS:
+            for cat in self._category_words:
                 if cat in context.lower():
                     key = cat
                     break
 
         # Check sentence body for category words (excluding the old/new values)
         if not key:
-            for cat in _CATEGORY_WORDS:
+            for cat in self._category_words:
                 if cat in s_lower:
                     key = cat
                     break
@@ -477,14 +495,14 @@ class KnowledgeBase:
         # Then try well-known value→category mapping
         if not key:
             new_lower = new_val.lower()
-            for tech_val, tech_cat in _VALUE_TO_CATEGORY.items():
+            for tech_val, tech_cat in self._value_to_category.items():
                 if tech_val in new_lower:
                     key = tech_cat
                     break
 
         if not key:
             old_lower = old_val.lower()
-            for tech_val, tech_cat in _VALUE_TO_CATEGORY.items():
+            for tech_val, tech_cat in self._value_to_category.items():
                 if tech_val in old_lower:
                     key = tech_cat
                     break
@@ -601,33 +619,33 @@ class KnowledgeBase:
     def _extract_money(self, sentence: str) -> Dict[str, str]:
         """Extract monetary facts: raised, valuation, revenue, ARR."""
         facts: Dict[str, str] = {}
-        s_lower = sentence.lower()
-
-        # "Raised $X" / "Raised $X in Y"
+        # Use IGNORECASE to match keywords but capture original-case values
         raised_match = re.search(
-            r"raised\s+(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)",
-            s_lower,
+            r"raised\s+(\$[\d,.]+[kKmMbB]?(?:\s*(?:million|billion))?)",
+            sentence,
+            re.IGNORECASE,
         )
         if raised_match:
             facts["funding raised"] = raised_match.group(1).strip()
 
-        # "$X valuation"
         val_match = re.search(
-            r"(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+valuation",
-            s_lower,
+            r"(\$[\d,.]+[kKmMbB]?(?:\s*(?:million|billion))?)\s+valuation",
+            sentence,
+            re.IGNORECASE,
         )
         if val_match:
             facts["valuation"] = val_match.group(1).strip()
 
-        # "revenue of $X" / "ARR of $X" / "$X ARR" / "$X revenue"
         rev_match = re.search(
-            r"(?:revenue|arr)\s+(?:of\s+)?(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)",
-            s_lower,
+            r"(?:revenue|arr)\s+(?:of\s+)?(\$[\d,.]+[kKmMbB]?(?:\s*(?:million|billion))?)",
+            sentence,
+            re.IGNORECASE,
         )
         if not rev_match:
             rev_match = re.search(
-                r"(\$[\d,.]+[kmb]?(?:\s*(?:million|billion))?)\s+(?:revenue|arr)",
-                s_lower,
+                r"(\$[\d,.]+[kKmMbB]?(?:\s*(?:million|billion))?)\s+(?:revenue|arr)",
+                sentence,
+                re.IGNORECASE,
             )
         if rev_match:
             facts["revenue"] = rev_match.group(1).strip()
@@ -639,9 +657,11 @@ class KnowledgeBase:
         facts: Dict[str, str] = {}
 
         # "X is Y%" / "X: Y%" / "X at Y%"
+        # Use original-case sentence for key extraction, case-insensitive match
         pct_match = re.search(
             r"(\w[\w\s]*?)\s+(?:is|at|was|reached|hit)\s+([\d.]+%)",
-            sentence.lower(),
+            sentence,
+            re.IGNORECASE,
         )
         if pct_match:
             key = pct_match.group(1).strip()
@@ -655,7 +675,7 @@ class KnowledgeBase:
         facts: Dict[str, str] = {}
         s_lower = sentence.lower()
         found = []
-        for kw in _COMPLIANCE_KEYWORDS:
+        for kw in self._compliance_keywords:
             if kw in s_lower:
                 found.append(kw.upper().replace(" ", ""))
         if found:
@@ -739,8 +759,11 @@ class KnowledgeBase:
             return
         os.makedirs(self._persistence_path, exist_ok=True)
         data = {"facts": self._facts, "history": self._history}
-        with open(self._file_path(), "w") as f:
+        # Atomic write: write to temp file then rename
+        tmp_path = self._file_path() + ".tmp"
+        with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp_path, self._file_path())
 
     def _load(self) -> None:
         if not self._persistence_path:

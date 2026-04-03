@@ -129,12 +129,12 @@ class TestMoney:
         kb = KnowledgeBase()
         kb.update("We raised $5M in Series A")
         assert "funding raised" in kb.get_all()
-        assert "$5m" in kb.get_all()["funding raised"]
+        assert "$5M" in kb.get_all()["funding raised"]
 
     def test_valuation(self):
         kb = KnowledgeBase()
         kb.update("$50M valuation")
-        assert kb.get_all()["valuation"] == "$50m"
+        assert kb.get_all()["valuation"] == "$50M"
 
     def test_revenue(self):
         kb = KnowledgeBase()

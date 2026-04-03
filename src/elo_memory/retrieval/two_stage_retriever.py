@@ -18,7 +18,8 @@ Stages:
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from sklearn.metrics.pairwise import cosine_similarity as _sklearn_cosine
 
 from ..memory.episodic_store import Episode, EpisodicMemoryStore
 
@@ -32,11 +33,11 @@ class RetrievalConfig:
     similarity_threshold: float = 0.3  # Minimum similarity score
 
     # Stage 2: Temporal expansion
-    temporal_window: int = 5  # Retrieve ±N temporally adjacent episodes
+    temporal_window: int = 30  # Retrieve ±N minutes temporally adjacent episodes
     enable_temporal_expansion: bool = True
 
     # Ranking
-    similarity_weight: float = 0.6  # Weight for similarity score
+    similarity_weight: float = 0.4  # Weight for similarity score
     recency_weight: float = 0.2  # Weight for recency
     importance_weight: float = 0.2  # Weight for importance
     keyword_weight: float = 0.2  # Weight for keyword overlap scoring
@@ -73,7 +74,6 @@ class TwoStageRetriever:
         """
         self.memory = memory_store
         self.config = config or RetrievalConfig()
-        self._query_text: Optional[str] = None
 
     def retrieve(
         self,
@@ -96,9 +96,9 @@ class TwoStageRetriever:
             raise ValueError("query must be a numpy array or string, got None")
 
         # Auto-encode string queries
-        self._query_text: Optional[str] = None
+        _query_text: Optional[str] = None
         if isinstance(query, str):
-            self._query_text = query
+            _query_text = query
             encoder = self.memory._get_encoder()
             if encoder is not None:
                 query = encoder.encode(query)
@@ -106,7 +106,7 @@ class TwoStageRetriever:
                 query = self.memory._generate_embedding({"text": query})
         query = np.asarray(query)
 
-        query_time = query_time or datetime.now()
+        query_time = query_time or datetime.now(timezone.utc)
 
         # Stage 1: Similarity-based retrieval
         similar_episodes = self._stage1_similarity_retrieval(query, filter_criteria)
@@ -121,7 +121,7 @@ class TwoStageRetriever:
             all_episodes = similar_episodes
 
         # Final ranking and selection
-        ranked_episodes = self._final_ranking(all_episodes, query, query_time)
+        ranked_episodes = self._final_ranking(all_episodes, query, query_time, _query_text)
 
         return ranked_episodes[: self.config.max_retrieved]
 
@@ -184,7 +184,8 @@ class TwoStageRetriever:
         return list(episodes_dict.values())
 
     def _final_ranking(
-        self, episodes: List[Episode], query: np.ndarray, query_time: datetime
+        self, episodes: List[Episode], query: np.ndarray, query_time: datetime,
+        query_text: Optional[str] = None,
     ) -> List[Tuple[Episode, float]]:
         """
         Final ranking combining multiple factors.
@@ -209,7 +210,12 @@ class TwoStageRetriever:
                 similarity = 0.0
 
             # 2. Recency score (exponential decay)
-            time_diff = (query_time - episode.timestamp).total_seconds()
+            ep_ts = episode.timestamp
+            if ep_ts.tzinfo is None and query_time.tzinfo is not None:
+                ep_ts = ep_ts.replace(tzinfo=timezone.utc)
+            elif ep_ts.tzinfo is not None and query_time.tzinfo is None:
+                query_time = query_time.replace(tzinfo=timezone.utc)
+            time_diff = (query_time - ep_ts).total_seconds()
             recency = np.exp(-time_diff / (self.config.recency_decay_hours * 3600))
 
             # 3. Importance score (already normalized)
@@ -217,10 +223,10 @@ class TwoStageRetriever:
 
             # 4. Keyword overlap score
             keyword_score = 0.0
-            if self._query_text and isinstance(episode.content, dict):
+            if query_text and isinstance(episode.content, dict):
                 ep_text = episode.content.get("text", "")
                 if ep_text:
-                    query_words = set(self._query_text.lower().split())
+                    query_words = set(query_text.lower().split())
                     ep_words = set(ep_text.lower().split())
                     if query_words:
                         keyword_score = len(query_words & ep_words) / len(query_words)
@@ -240,16 +246,12 @@ class TwoStageRetriever:
 
         return scored_episodes
 
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    @staticmethod
+    def _cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
         """Compute cosine similarity between two vectors."""
-        dot_product = np.dot(vec1, vec2)
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
-
-        if norm1 == 0 or norm2 == 0:
+        if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
             return 0.0
-
-        return dot_product / (norm1 * norm2)
+        return float(_sklearn_cosine(vec1.reshape(1, -1), vec2.reshape(1, -1))[0, 0])
 
     def retrieve_by_temporal_cue(self, time_description: str, k: int = 10) -> List[Episode]:
         """
@@ -263,7 +265,7 @@ class TwoStageRetriever:
             Retrieved episodes
         """
         # Parse temporal description (simplified)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         if "yesterday" in time_description.lower():
             start_time = now - timedelta(days=1)
@@ -321,75 +323,3 @@ class TwoStageRetriever:
         unique_episodes.sort(key=lambda ep: ep.importance, reverse=True)
 
         return unique_episodes[:k]
-
-
-if __name__ == "__main__":
-    print("=== Two-Stage Retriever Test ===\n")
-
-    # Import and setup memory store
-    from elo_memory.memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig
-
-    # Initialize
-    memory_config = EpisodicMemoryConfig(embedding_dim=128)
-    memory = EpisodicMemoryStore(memory_config)
-
-    retriever = TwoStageRetriever(memory)
-
-    # Create test episodes with temporal structure
-    print("Creating test episodes...")
-    base_time = datetime.now() - timedelta(hours=2)
-
-    for i in range(30):
-        content = np.random.randn(10)
-        embedding = np.random.randn(128)
-        embedding = embedding / np.linalg.norm(embedding)  # Normalize
-
-        # Create temporal clusters
-        if i < 10:
-            timestamp = base_time + timedelta(minutes=i * 2)
-            location = "office"
-            surprise = 0.3
-        elif i < 20:
-            timestamp = base_time + timedelta(minutes=30 + i * 2)
-            location = "cafe"
-            surprise = 2.5  # High surprise cluster
-        else:
-            timestamp = base_time + timedelta(minutes=60 + i * 2)
-            location = "home"
-            surprise = 0.5
-
-        memory.store_episode(
-            content=content,
-            embedding=embedding,
-            surprise=surprise,
-            timestamp=timestamp,
-            location=location,
-            entities=[f"person_{i % 3}"],
-        )
-
-    print(f"Stored {memory.total_episodes_stored} episodes\n")
-
-    # Test two-stage retrieval
-    query = np.random.randn(128)
-    query = query / np.linalg.norm(query)
-
-    results = retriever.retrieve(query)
-
-    print(f"Two-Stage Retrieval Results (top {len(results)}):")
-    for i, (episode, score) in enumerate(results, 1):
-        print(
-            f"{i}. Score: {score:.3f}, Surprise: {episode.surprise:.2f}, "
-            f"Location: {episode.location}, Time: {episode.timestamp.strftime('%H:%M')}"
-        )
-
-    # Test temporal retrieval
-    print("\n\nTemporal Retrieval Test:")
-    temporal_results = retriever.retrieve_by_temporal_cue("last 2 hours")
-    print(f"Episodes from 'last 2 hours': {len(temporal_results)}")
-
-    # Test contextual retrieval
-    print("\nContextual Retrieval Test:")
-    cafe_results = retriever.retrieve_by_contextual_cue(location="cafe", k=5)
-    print(f"Episodes at 'cafe': {len(cafe_results)}")
-
-    print("\n✓ Two-stage retriever test complete!")
