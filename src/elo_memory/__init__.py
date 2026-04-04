@@ -25,84 +25,73 @@ __license__ = "BSL-1.1"
 logger = logging.getLogger("elo_memory")
 logger.addHandler(logging.NullHandler())
 
-try:
-    from .surprise.bayesian_surprise import BayesianSurpriseEngine, SurpriseConfig
-    from .segmentation.event_segmenter import EventSegmenter, SegmentationConfig
-    from .memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig, Episode
-    from .retrieval.two_stage_retriever import TwoStageRetriever, RetrievalConfig
-    from .consolidation.memory_consolidation import MemoryConsolidationEngine, ConsolidationConfig
-    from .memory.forgetting import ForgettingEngine, ForgettingConfig
-    from .memory.interference import InterferenceResolver, InterferenceConfig
-    from .online_learning import OnlineLearner, OnlineLearningConfig
-    from .memory.user_memory import UserMemory
-    from .brain import EloBrain
-    from .governor import MemoryGovernor, GovernorConfig, DecisionContext, Action
-    from .causal_engine import CausalInferenceEngine, CausalEngineConfig
-    from .world_simulator import WorldSimulator, WorldSimConfig, Experience
-    from .evolution import ParametricEvolution, EvolutionConfig
-    from .consolidation.dream_cycle import DreamConsolidation, DreamConfig
-    from .retrieval.prefetcher import PredictivePrefetcher, PrefetchConfig
-    from .auditor import MemoryAuditor
-    from .federation import (
-        FederationClient,
-        MemoryPool,
-        MemoryModule,
-        DifferentialPrivacy,
-        PrivacyAccountant,
-    )
+from .surprise.bayesian_surprise import BayesianSurpriseEngine, SurpriseConfig
+from .segmentation.event_segmenter import EventSegmenter, SegmentationConfig
+from .memory.episodic_store import EpisodicMemoryStore, EpisodicMemoryConfig, Episode
+from .retrieval.two_stage_retriever import TwoStageRetriever, RetrievalConfig
+from .consolidation.memory_consolidation import MemoryConsolidationEngine, ConsolidationConfig
+from .memory.forgetting import ForgettingEngine, ForgettingConfig
+from .memory.interference import InterferenceResolver, InterferenceConfig
+from .online_learning import OnlineLearner, OnlineLearningConfig
+from .memory.user_memory import UserMemory
+from .brain import EloBrain
+from .governor import MemoryGovernor, GovernorConfig, DecisionContext, Action
+from .causal_engine import CausalInferenceEngine, CausalEngineConfig
+from .world_simulator import WorldSimulator, WorldSimConfig, Experience
+from .evolution import ParametricEvolution, EvolutionConfig
+from .consolidation.dream_cycle import DreamConsolidation, DreamConfig
+from .retrieval.prefetcher import PredictivePrefetcher, PrefetchConfig
+from .auditor import MemoryAuditor
+from .federation import (
+    FederationClient,
+    MemoryPool,
+    MemoryModule,
+    DifferentialPrivacy,
+    PrivacyAccountant,
+)
 
-    __all__ = [
-        "BayesianSurpriseEngine",
-        "SurpriseConfig",
-        "EventSegmenter",
-        "SegmentationConfig",
-        "EpisodicMemoryStore",
-        "EpisodicMemoryConfig",
-        "Episode",
-        "TwoStageRetriever",
-        "RetrievalConfig",
-        "MemoryConsolidationEngine",
-        "ConsolidationConfig",
-        "ForgettingEngine",
-        "ForgettingConfig",
-        "InterferenceResolver",
-        "InterferenceConfig",
-        "OnlineLearner",
-        "OnlineLearningConfig",
-        "UserMemory",
-        "EloBrain",
-        # Governor
-        "MemoryGovernor",
-        "GovernorConfig",
-        "DecisionContext",
-        "Action",
-        # Causal Engine
-        "CausalInferenceEngine",
-        "CausalEngineConfig",
-        # World Simulator
-        "WorldSimulator",
-        "WorldSimConfig",
-        "Experience",
-        # Parametric Evolution
-        "ParametricEvolution",
-        "EvolutionConfig",
-        # Dream Consolidation
-        "DreamConsolidation",
-        "DreamConfig",
-        # Predictive Prefetcher
-        "PredictivePrefetcher",
-        "PrefetchConfig",
-        # Auditor
-        "MemoryAuditor",
-        # Federation
-        "FederationClient",
-        "MemoryPool",
-        "MemoryModule",
-        "DifferentialPrivacy",
-        "PrivacyAccountant",
-        "__version__",
-        "__author__",
-        "__license__",
-    ]
-except ImportError:
-    __all__ = ["__version__", "__author__", "__license__"]
+__all__ = [
+    "BayesianSurpriseEngine",
+    "SurpriseConfig",
+    "EventSegmenter",
+    "SegmentationConfig",
+    "EpisodicMemoryStore",
+    "EpisodicMemoryConfig",
+    "Episode",
+    "TwoStageRetriever",
+    "RetrievalConfig",
+    "MemoryConsolidationEngine",
+    "ConsolidationConfig",
+    "ForgettingEngine",
+    "ForgettingConfig",
+    "InterferenceResolver",
+    "InterferenceConfig",
+    "OnlineLearner",
+    "OnlineLearningConfig",
+    "UserMemory",
+    "EloBrain",
+    "MemoryGovernor",
+    "GovernorConfig",
+    "DecisionContext",
+    "Action",
+    "CausalInferenceEngine",
+    "CausalEngineConfig",
+    "WorldSimulator",
+    "WorldSimConfig",
+    "Experience",
+    "ParametricEvolution",
+    "EvolutionConfig",
+    "DreamConsolidation",
+    "DreamConfig",
+    "PredictivePrefetcher",
+    "PrefetchConfig",
+    "MemoryAuditor",
+    "FederationClient",
+    "MemoryPool",
+    "MemoryModule",
+    "DifferentialPrivacy",
+    "PrivacyAccountant",
+    "__version__",
+    "__author__",
+    "__license__",
+]

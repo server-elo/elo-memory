@@ -25,9 +25,9 @@ logger = logging.getLogger("elo_memory.mcp")
 
 # Try to load sentence-transformers for embedding generation
 EMBEDDING_MODEL = None
-EMBEDDING_DIM = 768  # fallback default
+EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 default
 
-def _load_embedding_model(model_name: str = 'BAAI/bge-small-en-v1.5', retries: int = 3) -> Optional[Any]:
+def _load_embedding_model(model_name: str = 'all-MiniLM-L6-v2', retries: int = 3) -> Optional[Any]:
     """Load SentenceTransformer with retries for network/disk failures."""
     try:
         from sentence_transformers import SentenceTransformer
