@@ -92,7 +92,7 @@ class PredictivePrefetcher:
         topics: Optional[List[str]] = None,
         entities: Optional[List[str]] = None,
         results: Optional[List[Tuple[str, float]]] = None,
-    ):
+    ) -> None:
         """
         Record a query for pattern learning.
 
@@ -191,23 +191,24 @@ class PredictivePrefetcher:
 
     def predict_next_topics(self, current_topics: List[str]) -> List[Tuple[str, float]]:
         """Predict the most likely next topics with probabilities."""
-        topic_scores: Counter = Counter()
+        topic_scores: Dict[str, float] = {}
 
         for topic in current_topics:
             if topic in self._transitions:
                 total = sum(self._transitions[topic].values())
                 for next_topic, count in self._transitions[topic].items():
-                    topic_scores[next_topic] += count / max(total, 1)
+                    topic_scores[next_topic] = topic_scores.get(next_topic, 0.0) + count / max(total, 1)
 
-        return topic_scores.most_common(self.config.top_k_predictions)
+        ranked = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)
+        return ranked[:self.config.top_k_predictions]
 
     # ── Cache ────────────────────────────────────────────────────
 
     def prefetch(
         self,
         predictions: List[Dict[str, Any]],
-        retrieval_fn,
-    ):
+        retrieval_fn: Any,
+    ) -> None:
         """
         Pre-load memories for predicted queries.
 
@@ -253,7 +254,7 @@ class PredictivePrefetcher:
     def _cache_key(self, text: str) -> str:
         return text.lower().strip()[:100]
 
-    def _evict_cache(self):
+    def _evict_cache(self) -> None:
         """Evict expired and excess cache entries."""
         now = time.time()
         # Remove expired

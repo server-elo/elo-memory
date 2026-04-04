@@ -18,6 +18,7 @@ Key Features:
 5. Automatic memory consolidation and pruning
 """
 
+import hashlib
 import logging
 from collections import OrderedDict
 import numpy as np
@@ -58,11 +59,11 @@ class Episode:
     surprise: float = 0.0
     importance: float = 0.5
     metadata: Dict[str, Any] = field(default_factory=dict)
-    episode_id: Optional[str] = None
+    episode_id: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Generate episode ID if not provided."""
-        if self.episode_id is None:
+        if not self.episode_id:
             import uuid
             self.episode_id = f"ep_{self.timestamp.timestamp()}_{uuid.uuid4().hex[:12]}"
 
@@ -100,7 +101,7 @@ class Episode:
             surprise=data.get("surprise", 0.0),
             importance=data.get("importance", 0.5),
             metadata=data.get("metadata", {}),
-            episode_id=data.get("episode_id"),
+            episode_id=data.get("episode_id", ""),
         )
 
 
@@ -187,7 +188,7 @@ class EpisodicMemoryStore:
             # Auto-load state when persistence_path is set
             self.load_state()
 
-    def _initialize_vector_db(self):
+    def _initialize_vector_db(self) -> None:
         """Initialize vector database for similarity search."""
         self.collection = None
         if self.config.vector_db_backend == "chromadb":
@@ -211,7 +212,7 @@ class EpisodicMemoryStore:
     _encoder_lock = threading.Lock()
 
     @classmethod
-    def _get_encoder(cls):
+    def _get_encoder(cls) -> Any:
         """Lazy-load SentenceTransformer encoder (thread-safe). Returns None if not installed."""
         if cls._encoder is not None:
             return cls._encoder
@@ -230,7 +231,7 @@ class EpisodicMemoryStore:
                 )
                 return None
 
-    def search(self, query, k: int = 5) -> List["Episode"]:
+    def search(self, query: Any, k: int = 5) -> List["Episode"]:
         """
         Convenience method: search episodes by string or embedding.
 
@@ -363,7 +364,7 @@ class EpisodicMemoryStore:
         """
         # Sigmoid transformation of surprise
         importance = 1.0 / (1.0 + np.exp(-surprise + 2.0))
-        return np.clip(importance, 0.0, 1.0)
+        return float(np.clip(importance, 0.0, 1.0))
 
     def should_consolidate(self) -> bool:
         """Check if consolidation should run (hybrid time + count)."""
@@ -393,7 +394,7 @@ class EpisodicMemoryStore:
                     return True
         return False
 
-    def mark_consolidated(self):
+    def mark_consolidated(self) -> None:
         """Mark consolidation as complete, reset counters."""
         self.last_consolidation_time = datetime.now(timezone.utc)
         self.episodes_since_consolidation = 0
@@ -430,10 +431,11 @@ class EpisodicMemoryStore:
 
         return embedding
 
-    def _update_indices(self, episode: Episode):
+    def _update_indices(self, episode: Episode) -> None:
         """Update all indices with new episode."""
         # ID index for O(1) lookup
-        self._episode_index[episode.episode_id] = episode
+        if episode.episode_id is not None:
+            self._episode_index[episode.episode_id] = episode
 
         # Temporal index (by date)
         date_key = episode.timestamp.strftime("%Y-%m-%d")
@@ -454,14 +456,17 @@ class EpisodicMemoryStore:
                 self.entity_index[key] = []
             self.entity_index[key].append(episode.episode_id)
 
-    def _add_to_vector_db(self, episode: Episode):
-        """Add episode to vector database for similarity search."""
+    def _add_to_vector_db(self, episode: Episode) -> bool:
+        """Add episode to vector database for similarity search.
+
+        Returns True on success, False on failure.
+        """
         if self.collection is None:
-            return
+            return True  # No vector DB configured, not an error
         try:
             self.collection.add(
                 ids=[episode.episode_id],
-                embeddings=[episode.embedding.tolist()],
+                embeddings=[episode.embedding.tolist() if episode.embedding is not None else []],
                 metadatas=[
                     {
                         "timestamp": episode.timestamp.isoformat(),
@@ -472,8 +477,10 @@ class EpisodicMemoryStore:
                     }
                 ],
             )
+            return True
         except Exception as e:
             logger.error("Failed to add episode %s to vector DB: %s", episode.episode_id, e)
+            return False
 
     def retrieve_by_similarity(
         self, query_embedding: np.ndarray, k: int = 10, filter_criteria: Optional[Dict] = None
@@ -495,12 +502,14 @@ class EpisodicMemoryStore:
         # LRU cache lookup (skip cache when filters are used — too many key combos)
         cache_key = None
         if self._query_cache_max > 0 and filter_criteria is None:
-            cache_key = f"{query_embedding.tobytes().hex()[:32]}:k={k}"
+            q_hash = hashlib.sha256(query_embedding.tobytes()).hexdigest()
+            cache_key = f"{q_hash}:k={k}"
             if cache_key in self._query_cache:
                 self._query_cache.move_to_end(cache_key)
                 cached_ids = self._query_cache[cache_key]
-                episodes = [self._get_episode_by_id(eid) for eid in cached_ids]
-                episodes = [ep for ep in episodes if ep is not None]
+                episodes: List[Episode] = [
+                    e for e in (self._get_episode_by_id(eid) for eid in cached_ids) if e is not None
+                ]
                 # Still apply forgetting/activation below
                 for ep in episodes:
                     retrieval_count = ep.metadata.get("_retrieval_count", 0)
@@ -536,12 +545,13 @@ class EpisodicMemoryStore:
             if len(self._query_cache) > self._query_cache_max:
                 self._query_cache.popitem(last=False)  # evict oldest
 
-        episodes = [self._get_episode_by_id(eid) for eid in episode_ids]
-        episodes = [ep for ep in episodes if ep is not None]
+        matched: List[Episode] = [
+            e for e in (self._get_episode_by_id(eid) for eid in episode_ids) if e is not None
+        ]
 
         # Apply forgetting: re-rank by activation (decayed importance)
         # Rehearsal count tracks how many times an episode was retrieved
-        for ep in episodes:
+        for ep in matched:
             retrieval_count = ep.metadata.get("_retrieval_count", 0)
             new_count = retrieval_count + 1
             ep.metadata["_retrieval_count"] = new_count
@@ -552,9 +562,9 @@ class EpisodicMemoryStore:
             )
 
         # Sort by activation (highest first) so decayed memories rank lower
-        episodes.sort(key=lambda ep: ep.metadata.get("_activation", 0), reverse=True)
+        matched.sort(key=lambda ep: ep.metadata.get("_activation", 0), reverse=True)
 
-        return episodes
+        return matched
 
     def retrieve_by_temporal_range(self, start_time: datetime, end_time: datetime) -> List[Episode]:
         """
@@ -629,7 +639,7 @@ class EpisodicMemoryStore:
             )
 
         # Run consolidation (replay + schema extraction)
-        def _strengthen(ep):
+        def _strengthen(ep: Episode) -> None:
             """Rehearsal callback: boost importance of replayed episodes."""
             ep.importance = min(1.0, ep.importance * 1.1)
             ep.metadata["_retrieval_count"] = ep.metadata.get("_retrieval_count", 0) + 1
@@ -637,7 +647,7 @@ class EpisodicMemoryStore:
         stats = self._consolidation_engine.consolidate(self.episodes, update_callback=_strengthen)
         return stats
 
-    def _consolidate_memory(self):
+    def _consolidate_memory(self) -> None:
         """
         Consolidate memory by offloading low-importance episodes to disk.
         Mimics hippocampal consolidation: important memories stay, others archived.
@@ -660,12 +670,47 @@ class EpisodicMemoryStore:
 
             for episode in episodes_to_offload:
                 self._episode_index.pop(episode.episode_id, None)
+                # Clean temporal index
+                date_key = episode.timestamp.strftime("%Y-%m-%d")
+                if date_key in self.temporal_index:
+                    self.temporal_index[date_key] = [
+                        eid for eid in self.temporal_index[date_key]
+                        if eid != episode.episode_id
+                    ]
+                    if not self.temporal_index[date_key]:
+                        del self.temporal_index[date_key]
+                # Clean spatial index
+                if episode.location and episode.location in self.spatial_index:
+                    self.spatial_index[episode.location] = [
+                        eid for eid in self.spatial_index[episode.location]
+                        if eid != episode.episode_id
+                    ]
+                    if not self.spatial_index[episode.location]:
+                        del self.spatial_index[episode.location]
+                # Clean entity index
+                for entity in episode.entities:
+                    key = entity.lower()
+                    if key in self.entity_index:
+                        self.entity_index[key] = [
+                            eid for eid in self.entity_index[key]
+                            if eid != episode.episode_id
+                        ]
+                        if not self.entity_index[key]:
+                            del self.entity_index[key]
+                # Remove from vector DB
+                if self.collection is not None:
+                    try:
+                        self.collection.delete(ids=[episode.episode_id])
+                    except Exception as e:
+                        logger.warning("Failed to remove episode %s from vector DB: %s",
+                                       episode.episode_id, e)
+
                 self._offload_episode(episode)
                 self.episodes_offloaded += 1
 
         self.mark_consolidated()
 
-    def _offload_episode(self, episode: Episode):
+    def _offload_episode(self, episode: Episode) -> None:
         """Offload episode to disk storage as JSON."""
         if not self.persistence_path:
             return
@@ -679,11 +724,14 @@ class EpisodicMemoryStore:
             logger.error("Failed to offload episode %s: %s", episode.episode_id, e)
 
     def _load_offloaded_episode(self, episode_id: str) -> Optional[Episode]:
-        """Load episode from disk storage (JSON, with legacy pickle fallback)."""
+        """Load episode from disk storage as JSON only.
+
+        Legacy pickle loading has been removed to eliminate arbitrary code
+        execution risks.  Any remaining .pkl files are ignored and logged.
+        """
         if not self.persistence_path:
             return None
 
-        # Try JSON first
         json_path = self.persistence_path / "offloaded" / f"{episode_id}.json"
         if json_path.exists():
             try:
@@ -693,28 +741,19 @@ class EpisodicMemoryStore:
                 logger.error("Failed to load offloaded episode %s: %s", episode_id, e)
                 return None
 
-        # Legacy pickle fallback (read-only, for migration)
+        # Legacy pickle files are no longer loaded for security reasons.
         pkl_path = self.persistence_path / "offloaded" / f"{episode_id}.pkl"
         if pkl_path.exists():
             logger.warning(
-                "Episode %s is in legacy pickle format. "
-                "Re-offloading will convert it to JSON.",
+                "Episode %s is in legacy pickle format and cannot be loaded. "
+                "Delete %s to remove the warning.",
                 episode_id,
+                pkl_path,
             )
-            try:
-                import pickle  # noqa: S403 — legacy migration only
-                with open(pkl_path, "rb") as f:
-                    episode = pickle.load(f)  # noqa: S301
-                # Re-save as JSON and remove pickle
-                self._offload_episode(episode)
-                pkl_path.unlink()
-                return episode
-            except Exception as e:
-                logger.error("Failed to load legacy pickle episode %s: %s", episode_id, e)
 
         return None
 
-    def save_state(self):
+    def save_state(self) -> None:
         """Save memory state to disk."""
         if not self.persistence_path:
             return
@@ -745,7 +784,7 @@ class EpisodicMemoryStore:
         except Exception as e:
             logger.error("Failed to save state: %s", e)
 
-    def load_state(self):
+    def load_state(self) -> None:
         """Load memory state from disk."""
         if not self.persistence_path:
             return

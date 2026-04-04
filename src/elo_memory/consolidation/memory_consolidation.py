@@ -20,7 +20,7 @@ References:
 """
 
 import numpy as np
-from typing import Callable, List, Dict, Optional, Tuple
+from typing import Any, Callable, List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import heapq
@@ -57,7 +57,7 @@ class MemoryConsolidationEngine:
         self.config = config or ConsolidationConfig()
 
         # Schemas: abstracted patterns from multiple episodes
-        self.schemas = []  # List of (pattern, frequency, episodes)
+        self.schemas: List[Dict[str, Any]] = []
 
         # Consolidation stats
         self.last_consolidation = datetime.now(timezone.utc)
@@ -154,7 +154,7 @@ class MemoryConsolidationEngine:
         for location, location_episodes in location_groups.items():
             if len(location_episodes) >= self.config.schema_threshold:
                 # Find common entities
-                entity_counts = defaultdict(int)
+                entity_counts: Dict[str, int] = defaultdict(int)
                 for ep in location_episodes:
                     if hasattr(ep, "entities"):
                         for entity in ep.entities:
@@ -182,7 +182,7 @@ class MemoryConsolidationEngine:
                 schemas.append(schema)
 
         # Topic-based schema extraction: keyword frequency across episodes with text content
-        keyword_counts = defaultdict(int)
+        keyword_counts: Dict[str, int] = defaultdict(int)
         text_episode_count = 0
         for ep in episodes:
             text = None

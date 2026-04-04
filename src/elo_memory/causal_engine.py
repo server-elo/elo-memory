@@ -130,7 +130,7 @@ class CausalInferenceEngine:
 
         return links
 
-    def _add_link(self, link: CausalLink):
+    def _add_link(self, link: CausalLink) -> None:
         """Add or strengthen a causal link in the graph."""
         if self.graph.number_of_nodes() >= self.config.max_graph_nodes:
             self._prune_weak_links()
@@ -277,7 +277,7 @@ class CausalInferenceEngine:
 
     # ── Contradiction Detection ──────────────────────────────────
 
-    def _detect_contradictions_incremental(self, new_links: List[CausalLink]):
+    def _detect_contradictions_incremental(self, new_links: List[CausalLink]) -> None:
         """Check if new links contradict existing ones."""
         for link in new_links:
             cause_key = self._normalize(link.cause)
@@ -325,7 +325,7 @@ class CausalInferenceEngine:
 
     # ── Maintenance ──────────────────────────────────────────────
 
-    def decay_strengths(self, days_elapsed: float = 1.0):
+    def decay_strengths(self, days_elapsed: float = 1.0) -> None:
         """Weaken all links by time-based decay."""
         decay = self.config.decay_per_day * days_elapsed
         to_remove = []
@@ -339,7 +339,7 @@ class CausalInferenceEngine:
         orphans = [n for n in self.graph.nodes() if self.graph.degree(n) == 0]
         self.graph.remove_nodes_from(orphans)
 
-    def _prune_weak_links(self):
+    def _prune_weak_links(self) -> None:
         """Remove weakest links when graph is too large."""
         edges = sorted(
             self.graph.edges(data=True), key=lambda e: e[2]["strength"]
@@ -373,7 +373,7 @@ class CausalInferenceEngine:
 
     # ── Persistence ──────────────────────────────────────────────
 
-    def save(self, path: Path):
+    def save(self, path: Path) -> None:
         data = {
             "nodes": [
                 {"id": n, **self.graph.nodes[n]}
@@ -388,7 +388,7 @@ class CausalInferenceEngine:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def load(self, path: Path):
+    def load(self, path: Path) -> None:
         if not path.exists():
             return
         try:

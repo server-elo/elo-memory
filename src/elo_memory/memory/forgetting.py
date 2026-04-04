@@ -79,7 +79,7 @@ class ForgettingEngine:
             # Exponential decay: A(t) = A0 * e^(-dt)
             activation = boosted_activation * np.exp(-self.config.decay_rate * time_elapsed)
 
-        return activation
+        return float(activation)
 
     def should_forget(self, activation: float) -> bool:
         """
@@ -106,4 +106,4 @@ class ForgettingEngine:
         # Sigmoid function around min_activation threshold
         x = (activation - self.config.min_activation) / self.config.min_activation
         prob = 1 / (1 + np.exp(x * self.config.forgetting_steepness))
-        return prob
+        return float(prob)

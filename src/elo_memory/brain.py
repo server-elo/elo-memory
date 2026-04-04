@@ -173,7 +173,7 @@ class EloBrain:
 
             kb_answer = fut_kb_answer.result()
             kb_facts = fut_kb_facts.result()
-            memories = cached if cached is not None else fut_memories.result()
+            memories = cached if cached is not None else (fut_memories.result() if fut_memories else [])
             facts = fut_facts.result()
             profile = fut_profile.result()
 
@@ -282,7 +282,7 @@ class EloBrain:
         self,
         user_message: str,
         assistant_response: Optional[str] = None,
-    ):
+    ) -> None:
         """Store the interaction in memory.
 
         Governor decides what to store. Causal engine tracks relationships.
@@ -337,9 +337,9 @@ class EloBrain:
                     self._causal.ingest(user_message, episode_id)
 
                     # 7. Auditor: seal into hash chain
-                    ep = store._episode_index.get(episode_id)
-                    if ep:
-                        self._auditor.add_to_chain(ep)
+                    sealed_ep = store._episode_index.get(episode_id)
+                    if sealed_ep:
+                        self._auditor.add_to_chain(sealed_ep)
 
                     # Track episode for dream cycle
                     self._episodes_since_dream += 1
@@ -422,7 +422,7 @@ class EloBrain:
     # GDPR forget
     # ------------------------------------------------------------------
 
-    def forget(self, text: str):
+    def forget(self, text: str) -> None:
         """Supersede any memories matching *text* (GDPR erasure)."""
         text_lower = text.lower()
         with self._memory._lock:
@@ -454,7 +454,7 @@ class EloBrain:
     # Advanced capabilities
     # ------------------------------------------------------------------
 
-    def dream(self):
+    def dream(self) -> Any:
         """Run a dream consolidation cycle.
 
         NREM: replay important memories. REM: generate creative recombinations.
@@ -491,7 +491,7 @@ class EloBrain:
         chain_report["tampered_episodes"] = tampered
         return chain_report
 
-    def get_audit_log(self, episode_id: str = None, limit: int = 100) -> List[Dict]:
+    def get_audit_log(self, episode_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         return self._auditor.get_audit_log(episode_id=episode_id, limit=limit)
 
     def replay_experience(self, experience_id: str) -> List[Dict[str, Any]]:
@@ -517,7 +517,7 @@ class EloBrain:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def close(self):
+    def close(self) -> None:
         """Persist everything and release resources."""
         self._memory.close()
         self._governor.save()

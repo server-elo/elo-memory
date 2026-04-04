@@ -17,7 +17,7 @@ Key Concepts:
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
 
@@ -65,10 +65,10 @@ class BayesianSurpriseEngine:
         self.config = config or SurpriseConfig()
 
         # Observation history (sliding window for prior estimation)
-        self.observation_history = deque(maxlen=self.config.window_size)
+        self.observation_history: deque[np.ndarray] = deque(maxlen=self.config.window_size)
 
         # Surprise history for adaptive thresholding
-        self.surprise_history = deque(maxlen=self.config.surprise_history_len)
+        self.surprise_history: deque[float] = deque(maxlen=self.config.surprise_history_len)
 
         # Running statistics
         self.step_count = 0
@@ -139,9 +139,9 @@ class BayesianSurpriseEngine:
 
             kl = 0.5 * (kl_prior + kl_posterior)
 
-        return max(0.0, kl)  # Ensure non-negative
+        return float(max(0.0, kl))  # Ensure non-negative
 
-    def update_prior(self, observation: np.ndarray):
+    def update_prior(self, observation: np.ndarray) -> None:
         """
         Update prior distribution based on new observation.
         Uses exponential moving average for smooth updates.
@@ -203,7 +203,7 @@ class BayesianSurpriseEngine:
 
         return posterior_mean, posterior_var
 
-    def compute_surprise(self, observation: np.ndarray) -> Dict[str, float]:
+    def compute_surprise(self, observation: np.ndarray) -> Dict[str, Any]:
         """
         Compute Bayesian surprise for a new observation.
 
@@ -258,9 +258,9 @@ class BayesianSurpriseEngine:
         # Adaptive threshold
         if self.config.use_adaptive_threshold and len(self.surprise_history) > 20:
             # Set threshold at 75th percentile of recent surprise values
-            threshold = np.percentile(self.surprise_history, 75)
+            threshold = float(np.percentile(self.surprise_history, 75))
         else:
-            threshold = self.config.surprise_threshold
+            threshold = float(self.config.surprise_threshold)
 
         # Determine if observation is novel/surprising
         is_novel = surprise > threshold
@@ -329,7 +329,7 @@ class BayesianSurpriseEngine:
 
         return boundaries
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the surprise engine to initial state."""
         self.observation_history.clear()
         self.surprise_history.clear()

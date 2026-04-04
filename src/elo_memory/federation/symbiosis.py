@@ -135,7 +135,7 @@ class MemoryPool:
         mod.utility_score += 1.0
         return mod
 
-    def rate(self, module_id: str, score: float):
+    def rate(self, module_id: str, score: float) -> None:
         """Rate a module's utility (positive or negative)."""
         mod = self.modules.get(module_id)
         if mod:
@@ -153,12 +153,12 @@ class MemoryPool:
         mod.embedding = np.zeros_like(mod.embedding)  # Zero out data
         return True
 
-    def decay_all(self, factor: float = 0.95):
+    def decay_all(self, factor: float = 0.95) -> None:
         """Decay utility scores of all modules (evolutionary pressure)."""
         for mod in self.modules.values():
             mod.utility_score *= factor
 
-    def _evict_lowest(self):
+    def _evict_lowest(self) -> None:
         """Remove the lowest-utility module to make room."""
         if not self.modules:
             return
@@ -176,14 +176,14 @@ class MemoryPool:
             "categories": list({m.category for m in active if m.category}),
         }
 
-    def save(self):
+    def save(self) -> None:
         if not self._pool_path:
             return
         data = {mid: m.to_dict() for mid, m in self.modules.items()}
         with open(self._pool_path / "pool.json", "w") as f:
             json.dump(data, f)
 
-    def _load(self):
+    def _load(self) -> None:
         if not self._pool_path:
             return
         path = self._pool_path / "pool.json"
@@ -229,9 +229,13 @@ class FederationClient:
         """
         Export a memory to the shared pool with differential privacy.
         Returns module_id or None if privacy budget is exhausted.
+
+        Privacy budget is only spent AFTER the contribution succeeds,
+        so failed exports don't waste privacy credits.
         """
         epsilon = self._dp.config.epsilon
-        if not self._accountant.spend(epsilon, f"export:{category}"):
+        # Check budget availability first (don't spend yet)
+        if self._accountant.remaining_budget < epsilon:
             return None
 
         # Add noise
@@ -256,6 +260,11 @@ class FederationClient:
         )
 
         if self.pool.contribute(module):
+            # Only spend budget on successful contribution
+            if self._accountant.spend(epsilon, f"export:{category}"):
+                self._exported_ids.add(module.module_id)
+                return module.module_id
+            # Budget exhausted after contribution succeeded — still keep the module
             self._exported_ids.add(module.module_id)
             return module.module_id
         return None
@@ -282,7 +291,7 @@ class FederationClient:
 
         return result
 
-    def rate_module(self, module_id: str, score: float):
+    def rate_module(self, module_id: str, score: float) -> None:
         """Rate an imported module's usefulness."""
         self.pool.rate(module_id, score)
 

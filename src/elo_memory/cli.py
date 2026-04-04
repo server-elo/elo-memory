@@ -6,7 +6,7 @@ import sys
 from . import __version__
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="elo-memory", description="Elo Memory: Bio-inspired episodic memory for AI"

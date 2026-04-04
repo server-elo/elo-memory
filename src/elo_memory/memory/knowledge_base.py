@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -145,6 +146,7 @@ class KnowledgeBase:
         self._facts: Dict[str, str] = {}
         self._history: List[Dict] = []
         self._persistence_path = persistence_path
+        self._lock = threading.Lock()
         self._category_words = category_words if category_words is not None else _DEFAULT_CATEGORY_WORDS
         self._value_to_category = value_to_category if value_to_category is not None else _DEFAULT_VALUE_TO_CATEGORY
         self._compliance_keywords = compliance_keywords if compliance_keywords is not None else _DEFAULT_COMPLIANCE_KEYWORDS
@@ -157,54 +159,55 @@ class KnowledgeBase:
 
     def update(self, text: str) -> Dict[str, str]:
         """Extract facts from text, upsert into KB. Returns changes dict."""
-        changes: Dict[str, str] = {}
-        sentences = self._split_sentences(text)
-        for sentence in sentences:
-            extracted = self._extract_facts(sentence)
-            for key, value in extracted.items():
-                key = key.strip().lower()
-                # Clean value: strip trailing punctuation and fragments
-                value = value.strip().rstrip(".,;:!?")
-                # Remove trailing "is X" fragments from multi-part extractions
-                value = re.sub(r",\s+\w+\s+is\s+.*$", "", value)
-                # Truncate very long values (likely over-captured)
-                if len(value) > 80:
-                    value = value[:80].rsplit(" ", 1)[0]
-                if not key or not value or len(key) > 50:
-                    continue
-                # Deduplicate: skip if an existing key is a substring of this key
-                # e.g., skip "our nps" if "nps" already exists with same value
-                skip = False
-                for existing_key in list(self._facts.keys()):
-                    if existing_key.startswith("_"):
+        with self._lock:
+            changes: Dict[str, str] = {}
+            sentences = self._split_sentences(text)
+            for sentence in sentences:
+                extracted = self._extract_facts(sentence)
+                for key, value in extracted.items():
+                    key = key.strip().lower()
+                    # Clean value: strip trailing punctuation and fragments
+                    value = value.strip().rstrip(".,;:!?")
+                    # Remove trailing "is X" fragments from multi-part extractions
+                    value = re.sub(r",\s+\w+\s+is\s+.*$", "", value)
+                    # Truncate very long values (likely over-captured)
+                    if len(value) > 80:
+                        value = value[:80].rsplit(" ", 1)[0]
+                    if not key or not value or len(key) > 50:
                         continue
-                    if key != existing_key and (existing_key in key or key in existing_key):
-                        # Keep the shorter key
-                        if len(key) > len(existing_key):
-                            skip = True
-                            break
-                        else:
-                            # Replace longer key with shorter
-                            del self._facts[existing_key]
-                if skip:
-                    continue
-                old = self._facts.get(key)
-                if old != value:
-                    if old is not None:
-                        self._facts[f"_old_{key}"] = old
-                    self._facts[key] = value
-                    changes[key] = value
-                    self._history.append(
-                        {
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "key": key,
-                            "old": old,
-                            "new": value,
-                        }
-                    )
-        if changes and self._persistence_path:
-            self._save()
-        return changes
+                    # Deduplicate: skip if an existing key is a substring of this key
+                    # e.g., skip "our nps" if "nps" already exists with same value
+                    skip = False
+                    for existing_key in list(self._facts.keys()):
+                        if existing_key.startswith("_"):
+                            continue
+                        if key != existing_key and (existing_key in key or key in existing_key):
+                            # Keep the shorter key
+                            if len(key) > len(existing_key):
+                                skip = True
+                                break
+                            else:
+                                # Replace longer key with shorter
+                                del self._facts[existing_key]
+                    if skip:
+                        continue
+                    old = self._facts.get(key)
+                    if old != value:
+                        if old is not None:
+                            self._facts[f"_old_{key}"] = old
+                        self._facts[key] = value
+                        changes[key] = value
+                        self._history.append(
+                            {
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "key": key,
+                                "old": old,
+                                "new": value,
+                            }
+                        )
+            if changes and self._persistence_path:
+                self._save()
+            return changes
 
     def query(self, question: str) -> Optional[str]:
         """Answer from KB directly. Returns None if no match."""
@@ -748,7 +751,7 @@ class KnowledgeBase:
     # ------------------------------------------------------------------
 
     def _file_path(self) -> str:
-        return os.path.join(self._persistence_path, "knowledge_base.json")
+        return os.path.join(self._persistence_path or "", "knowledge_base.json")
 
     def _save(self) -> None:
         if not self._persistence_path:

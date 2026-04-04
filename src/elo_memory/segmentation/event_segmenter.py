@@ -56,7 +56,7 @@ class HiddenMarkovEventDetector:
         """
         self.n_states = n_states
         self.window_size = window_size
-        self.state_sequence = []
+        self.state_sequence: List[Any] = []
 
     def segment_sequence(self, observations: np.ndarray) -> List[int]:
         """
@@ -151,7 +151,7 @@ class PredictionErrorDetector:
             Prediction errors [n_timesteps]
         """
         # Euclidean distance between observation and prediction
-        errors = np.linalg.norm(observations - predictions, axis=1)
+        errors: np.ndarray = np.linalg.norm(observations - predictions, axis=1)
         return errors
 
     def detect_boundaries(self, prediction_errors: np.ndarray) -> List[int]:
@@ -249,7 +249,7 @@ class GraphBoundaryRefiner:
             nodes = {i for i, c in enumerate(communities) if c == community_id}
             community_sets.append(nodes)
 
-        return modularity(graph, community_sets)
+        return float(modularity(graph, community_sets))
 
     def compute_conductance(self, graph: nx.Graph, boundaries: List[int]) -> float:
         """
@@ -279,7 +279,7 @@ class GraphBoundaryRefiner:
                     cond = external_edges / (internal_edges + external_edges)
                     conductances.append(cond)
 
-        return np.mean(conductances) if conductances else 1.0
+        return float(np.mean(conductances)) if conductances else 1.0
 
     def refine_boundaries(
         self, observations: np.ndarray, initial_boundaries: List[int], max_iterations: int = 10

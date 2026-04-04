@@ -16,7 +16,7 @@ Stages:
 """
 
 import numpy as np
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -77,9 +77,9 @@ class TwoStageRetriever:
 
     def retrieve(
         self,
-        query,
+        query: Any,
         query_time: Optional[datetime] = None,
-        filter_criteria: Optional[Dict] = None,
+        filter_criteria: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[Episode, float]]:
         """
         Two-stage episodic retrieval.

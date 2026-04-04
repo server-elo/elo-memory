@@ -14,7 +14,7 @@ References:
 import threading
 
 import numpy as np
-from typing import List, Dict, Optional, Callable
+from typing import Any, List, Dict, Optional, Callable
 from dataclasses import dataclass
 from collections import deque
 
@@ -46,11 +46,11 @@ class OnlineLearner:
         self.config = config or OnlineLearningConfig()
 
         # Replay buffer (stores important experiences)
-        self.replay_buffer = deque(maxlen=self.config.replay_buffer_size)
+        self.replay_buffer: deque[Dict[str, Any]] = deque(maxlen=self.config.replay_buffer_size)
         self._buffer_lock = threading.Lock()
 
         # Fisher information (importance of each parameter)
-        self.fisher_information = {}
+        self.fisher_information: Dict[str, np.ndarray] = {}
 
         # Adaptive thresholds
         self.surprise_threshold = 1.0  # Initial surprise threshold
@@ -61,8 +61,8 @@ class OnlineLearner:
         self.replay_count = 0
 
     def add_to_replay_buffer(
-        self, observation: np.ndarray, surprise: float, metadata: Optional[Dict] = None
-    ):
+        self, observation: np.ndarray, surprise: float, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Add observation to replay buffer.
 
@@ -134,7 +134,7 @@ class OnlineLearner:
 
         return [buffer_snapshot[i] for i in indices]
 
-    def update_adaptive_threshold(self, current_value: float, threshold_type: str = "surprise"):
+    def update_adaptive_threshold(self, current_value: float, threshold_type: str = "surprise") -> None:
         """
         Update adaptive threshold using exponential moving average.
 
@@ -180,7 +180,7 @@ class OnlineLearner:
 
         return self.config.ewc_lambda * ewc_loss / 2.0
 
-    def update_fisher_information(self, param_name: str, gradient: np.ndarray):
+    def update_fisher_information(self, param_name: str, gradient: np.ndarray) -> None:
         """
         Update Fisher information matrix estimate.
 
@@ -200,8 +200,8 @@ class OnlineLearner:
         ) * (gradient**2)
 
     def online_update(
-        self, observation: np.ndarray, surprise: float, update_fn: Optional[Callable] = None
-    ):
+        self, observation: np.ndarray, surprise: float, update_fn: Optional[Callable[..., Any]] = None
+    ) -> None:
         """
         Perform online update with experience replay and EWC.
 
@@ -230,7 +230,7 @@ class OnlineLearner:
 
         self.total_updates += 1
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> Dict[str, Any]:
         """Get online learning statistics."""
         return {
             "total_updates": self.total_updates,

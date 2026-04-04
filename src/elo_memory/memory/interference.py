@@ -94,7 +94,7 @@ class InterferenceResolver:
             separated = separated + noise
             separated = separated / (np.linalg.norm(separated) + 1e-8)
 
-        return separated
+        return np.asarray(separated)
 
     def pattern_complete(
         self, partial_cue: np.ndarray, stored_patterns: List[np.ndarray], threshold: float = 0.5
@@ -119,7 +119,7 @@ class InterferenceResolver:
                 best_similarity = similarity
                 best_match = pattern
 
-        return best_match
+        return best_match  # type: ignore[return-value]
 
     def resolve_interference_set(
         self, new_embedding: np.ndarray, existing_embeddings: List[np.ndarray]

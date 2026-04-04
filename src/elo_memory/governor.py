@@ -182,7 +182,7 @@ class MemoryGovernor:
         context: DecisionContext,
         episode_id: Optional[str] = None,
         embedding: Optional[np.ndarray] = None,
-    ):
+    ) -> None:
         """Record a decision for delayed reward tracking."""
         bin_key = context.to_bin_key(self.config)
         emb_hash = ""
@@ -199,7 +199,7 @@ class MemoryGovernor:
         with self._lock:
             self._pending.append(pending)
 
-    def record_retrieval(self, episode_id: str):
+    def record_retrieval(self, episode_id: str) -> None:
         """Notify the governor that an episode was retrieved (positive reward)."""
         self._retrieved_ids.add(episode_id)
 
@@ -225,7 +225,7 @@ class MemoryGovernor:
 
     # ── Reward Resolution ────────────────────────────────────────
 
-    def _resolve_pending(self):
+    def _resolve_pending(self) -> None:
         """Check pending decisions and assign rewards."""
         now = time.time()
         cutoff = now - (self.config.reward_window_hours * 3600)
@@ -245,9 +245,16 @@ class MemoryGovernor:
             self._update_params(p.bin_key, p.action, reward)
             self.total_rewards += 1
 
-        # Prune retrieved IDs to prevent unbounded growth
+        # Prune retrieved IDs to prevent unbounded growth.
+        # Keep the most recent half to avoid corrupting pending reward signals.
         if len(self._retrieved_ids) > self._retrieved_ids_max:
-            self._retrieved_ids.clear()
+            n_to_remove = len(self._retrieved_ids) - (self._retrieved_ids_max // 2)
+            removed = 0
+            for item in list(self._retrieved_ids):
+                if removed >= n_to_remove:
+                    break
+                self._retrieved_ids.discard(item)
+                removed += 1
 
     def _compute_reward(self, decision: PendingDecision) -> float:
         """Compute reward for a resolved decision."""
@@ -255,8 +262,13 @@ class MemoryGovernor:
             # Success if the episode was retrieved
             return 1.0 if decision.episode_id in self._retrieved_ids else 0.0
         elif decision.action == Action.SKIP:
-            # Success if the observation was NOT needed (never queried)
-            return 0.0 if decision.episode_id in self._retrieved_ids else 1.0
+            # For skipped observations, check by embedding hash since there's no episode_id.
+            # If a hash match appears in retrieved IDs, the skipped content was needed.
+            skipped_was_needed = any(
+                decision.embedding_hash and decision.embedding_hash == h
+                for h in self._retrieved_ids
+            )
+            return 0.0 if skipped_was_needed else 1.0
         elif decision.action == Action.DEMOTE:
             # Reward if still retrieved (we reduced cost without losing utility)
             return 0.8 if decision.episode_id in self._retrieved_ids else 0.5
@@ -276,7 +288,7 @@ class MemoryGovernor:
             }
         return self._params[key]
 
-    def _update_params(self, bin_key: Tuple, action: Action, reward: float):
+    def _update_params(self, bin_key: Tuple[int, ...], action: Action, reward: float) -> None:
         params = self._get_params(bin_key, action)
         params["alpha"] += reward
         params["beta"] += (1.0 - reward)
@@ -318,7 +330,7 @@ class MemoryGovernor:
 
     # ── Persistence ──────────────────────────────────────────────
 
-    def save(self):
+    def save(self) -> None:
         if not self._persistence_path:
             return
         state = {
@@ -334,7 +346,7 @@ class MemoryGovernor:
         except Exception as e:
             logger.error("Failed to save governor state: %s", e)
 
-    def _load(self):
+    def _load(self) -> None:
         if not self._persistence_path:
             return
         path = self._persistence_path / "governor_state.json"

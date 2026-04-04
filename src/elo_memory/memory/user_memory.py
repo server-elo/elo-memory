@@ -316,7 +316,7 @@ class UserMemory:
         self._entity_extractor = EntityExtractor()
 
         # Lazy-loaded sentence transformer
-        self._embedder = None
+        self._embedder: Any = None
 
         # Session management
         self._session_id: str = str(uuid.uuid4())
@@ -338,7 +338,7 @@ class UserMemory:
     # Embedding
     # ------------------------------------------------------------------
 
-    def _get_embedder(self):
+    def _get_embedder(self) -> Any:
         if self._embedder is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -361,7 +361,7 @@ class UserMemory:
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
-        return vec.astype(np.float32)
+        return np.asarray(vec, dtype=np.float32)
 
     @staticmethod
     def _hash_embedding(text: str, dim: int = 384) -> np.ndarray:
@@ -425,7 +425,7 @@ class UserMemory:
         re.IGNORECASE,
     )
 
-    def _detect_and_supersede(self, text: str, new_episode_id: str):
+    def _detect_and_supersede(self, text: str, new_episode_id: str) -> None:
         """Detect transitional statements and supersede conflicting old memories."""
         text_lower = text.lower()
 
@@ -471,10 +471,10 @@ class UserMemory:
                         # Moderate similarity (same topic area) + "new" language = supersede
                         if cos > 0.7:
                             self._superseded.add(ep.episode_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Semantic supersession failed: %s", e)
 
-    def _supersede_by_value(self, old_value: str, new_value: str, new_episode_id: str):
+    def _supersede_by_value(self, old_value: str, new_value: str, new_episode_id: str) -> None:
         """Scan ALL episodes for old_value mentions and supersede them."""
         old_lower = old_value.lower()
         new_lower = new_value.lower()
@@ -502,9 +502,9 @@ class UserMemory:
     def _episode_text(ep: Episode) -> str:
         """Extract text content from an episode."""
         if isinstance(ep.content, dict):
-            return ep.content.get("text", str(ep.content))
+            return str(ep.content.get("text", str(ep.content)))
         if isinstance(ep.content, np.ndarray):
-            return ep.metadata.get("text", "")
+            return str(ep.metadata.get("text", ""))
         return str(ep.content)
 
     # ------------------------------------------------------------------
@@ -706,13 +706,13 @@ class UserMemory:
         self._save_meta()
         return self._session_id
 
-    def save(self):
+    def save(self) -> None:
         """Persist state to disk."""
         with self._lock:
             self._store.save_state()
             self._save_meta()
 
-    def close(self):
+    def close(self) -> None:
         """Save and release resources."""
         self.save()
 
@@ -723,7 +723,7 @@ class UserMemory:
     def _meta_path(self) -> Path:
         return self._user_dir / "user_meta.json"
 
-    def _save_meta(self):
+    def _save_meta(self) -> None:
         meta = {
             "user_id": self.user_id,
             "session_id": self._session_id,
@@ -740,7 +740,7 @@ class UserMemory:
 
         os.replace(str(tmp), str(self._meta_path()))
 
-    def _load_meta(self):
+    def _load_meta(self) -> None:
         path = self._meta_path()
         if not path.exists():
             return

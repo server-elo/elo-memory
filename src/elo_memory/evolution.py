@@ -117,14 +117,15 @@ class ParametricEvolution:
 
         # Re-normalize
         norm = np.linalg.norm(adapted)
-        return adapted / norm if norm > 0 else adapted
+        result: np.ndarray = adapted / norm if norm > 0 else adapted
+        return result
 
     def record_feedback(
         self,
         query_embedding: np.ndarray,
         result_embedding: np.ndarray,
         relevance: float,
-    ):
+    ) -> None:
         """Record retrieval feedback for future weight updates."""
         fb = RetrievalFeedback(
             query_embedding=query_embedding.copy(),
@@ -251,11 +252,12 @@ class ParametricEvolution:
         distilled = sum(w * e for w, e in zip(weights, adapted))
 
         norm = np.linalg.norm(distilled)
-        return distilled / norm if norm > 0 else distilled
+        result: np.ndarray = distilled / norm if norm > 0 else distilled
+        return result
 
     # ── Rollback ─────────────────────────────────────────────────
 
-    def _maybe_checkpoint(self, current_quality: float):
+    def _maybe_checkpoint(self, current_quality: float) -> None:
         """Save checkpoint or rollback if quality degraded."""
         if self._checkpoint_A is None:
             # First checkpoint
@@ -270,17 +272,19 @@ class ParametricEvolution:
                 "Quality degraded by %.3f, rolling back to checkpoint",
                 quality_delta,
             )
-            self.A = self._checkpoint_A.copy()
-            self.B = self._checkpoint_B.copy()
+            if self._checkpoint_A is not None:
+                self.A = self._checkpoint_A.copy()
+            if self._checkpoint_B is not None:
+                self.B = self._checkpoint_B.copy()
         else:
             # Update checkpoint
             self._checkpoint_A = self.A.copy()
             self._checkpoint_B = self.B.copy()
             self._checkpoint_quality = current_quality
 
-    def rollback(self):
+    def rollback(self) -> None:
         """Manually rollback to last checkpoint."""
-        if self._checkpoint_A is not None:
+        if self._checkpoint_A is not None and self._checkpoint_B is not None:
             self.A = self._checkpoint_A.copy()
             self.B = self._checkpoint_B.copy()
             logger.info("Rolled back to checkpoint")
@@ -301,7 +305,7 @@ class ParametricEvolution:
 
     # ── Persistence ──────────────────────────────────────────────
 
-    def save(self, path: Path):
+    def save(self, path: Path) -> None:
         data = {
             "A": self.A.tolist(),
             "B": self.B.tolist(),
@@ -315,7 +319,7 @@ class ParametricEvolution:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def load(self, path: Path):
+    def load(self, path: Path) -> None:
         if not path.exists():
             return
         try:

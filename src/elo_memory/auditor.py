@@ -179,7 +179,7 @@ class MemoryAuditor:
 
     # ── Merkle Tree ──────────────────────────────────────────────
 
-    def _update_merkle_root(self):
+    def _update_merkle_root(self) -> None:
         """Recompute the Merkle root from all chain hashes."""
         if not self._chain:
             self._merkle_root = None
@@ -278,7 +278,7 @@ class MemoryAuditor:
 
     # ── Audit Log ────────────────────────────────────────────────
 
-    def _log(self, action: str, episode_id: str, details: str = "", actor: str = "system"):
+    def _log(self, action: str, episode_id: str, details: str = "", actor: str = "system") -> None:
         entry = AuditEntry(
             episode_id=episode_id,
             action=action,
@@ -288,7 +288,7 @@ class MemoryAuditor:
         )
         self._audit_log.append(entry)
 
-    def log_access(self, episode_id: str, actor: str = "agent"):
+    def log_access(self, episode_id: str, actor: str = "agent") -> None:
         """Record a memory access for audit purposes."""
         self._log("read", episode_id, "Memory accessed", actor)
 
@@ -332,7 +332,7 @@ class MemoryAuditor:
 
     # ── Persistence ──────────────────────────────────────────────
 
-    def save(self):
+    def save(self) -> None:
         if not self._persistence_path:
             return
         data = {
@@ -362,7 +362,7 @@ class MemoryAuditor:
         with open(self._persistence_path / "auditor_state.json", "w") as f:
             json.dump(data, f)
 
-    def _load(self):
+    def _load(self) -> None:
         if not self._persistence_path:
             return
         path = self._persistence_path / "auditor_state.json"

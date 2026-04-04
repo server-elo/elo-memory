@@ -161,12 +161,12 @@ class DreamConsolidation:
 
         # Priority = importance ^ alpha * surprise ^ (1-alpha)
         alpha = self.config.replay_priority_alpha
-        priorities = []
+        priorities_list = []
         for ep in episodes:
             p = (ep.importance ** alpha) * ((ep.surprise + 0.1) ** (1 - alpha))
-            priorities.append(p)
+            priorities_list.append(p)
 
-        priorities = np.array(priorities)
+        priorities = np.array(priorities_list)
         total = priorities.sum()
         if total == 0 or not np.isfinite(total):
             probs = np.ones(len(priorities)) / len(priorities)
@@ -265,9 +265,11 @@ class DreamConsolidation:
         dot = np.clip(np.dot(v0_norm, v1_norm), -1.0, 1.0)
         omega = np.arccos(dot)
         if abs(omega) < 1e-6:
-            return (1 - t) * v0_norm + t * v1_norm
+            result: np.ndarray = (1 - t) * v0_norm + t * v1_norm
+            return result
         so = np.sin(omega)
-        return np.sin((1 - t) * omega) / so * v0_norm + np.sin(t * omega) / so * v1_norm
+        result2: np.ndarray = np.sin((1 - t) * omega) / so * v0_norm + np.sin(t * omega) / so * v1_norm
+        return result2
 
     # ── Stage 3: Abstraction ─────────────────────────────────────
 
@@ -342,6 +344,7 @@ class DreamConsolidation:
                 if assigned[j]:
                     continue
                 _, ep_j = with_emb[j]
+                assert ep_i.embedding is not None and ep_j.embedding is not None
                 sim = float(np.dot(ep_i.embedding, ep_j.embedding))
                 if sim >= self.config.cluster_threshold:
                     cluster.append(ep_j)
@@ -356,12 +359,12 @@ class DreamConsolidation:
     def _extract_skills(self, episodes: List[Episode]) -> List[Dict[str, Any]]:
         """Identify repeated action patterns as "skills"."""
         # Look for repeated entity + topic combinations
-        pattern_counts: Dict[Tuple, List[str]] = defaultdict(list)
+        pattern_counts: Dict[Tuple[Any, ...], List[str]] = defaultdict(list)
 
         for ep in episodes:
             topics = tuple(sorted(ep.metadata.get("topics", [])))
             entities_key = tuple(sorted(ep.entities[:3]))  # Top 3 entities
-            if topics or entities_key:
+            if (topics or entities_key) and ep.episode_id is not None:
                 key = (topics, entities_key)
                 pattern_counts[key].append(ep.episode_id)
 

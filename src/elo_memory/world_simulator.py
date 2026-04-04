@@ -342,7 +342,7 @@ class WorldSimulator:
         modality_name: str,
         embedding: np.ndarray,
         metadata: Optional[Dict] = None,
-    ):
+    ) -> None:
         """Attach an additional modality embedding to an episode."""
         mod = Modality(name=modality_name, embedding=embedding, metadata=metadata or {})
         if episode_id not in self._multimodal:
@@ -423,7 +423,7 @@ class WorldSimulator:
 
     # ── Persistence ──────────────────────────────────────────────
 
-    def save(self, path: Path):
+    def save(self, path: Path) -> None:
         data = {
             "experiences": [e.to_dict() for e in self.experiences],
             "spatial_map": {
@@ -434,7 +434,7 @@ class WorldSimulator:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def load(self, path: Path):
+    def load(self, path: Path) -> None:
         if not path.exists():
             return
         try:

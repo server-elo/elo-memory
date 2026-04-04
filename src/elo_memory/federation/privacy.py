@@ -134,7 +134,7 @@ class PrivacyAccountant:
             "is_exhausted": self.is_exhausted,
         }
 
-    def save(self, path: Path):
+    def save(self, path: Path) -> None:
         data = {
             "total_budget": self.total_budget,
             "delta": self.delta,
@@ -144,7 +144,7 @@ class PrivacyAccountant:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def load(self, path: Path):
+    def load(self, path: Path) -> None:
         if not path.exists():
             return
         try:

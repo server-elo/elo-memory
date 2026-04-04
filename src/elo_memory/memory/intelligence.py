@@ -82,7 +82,7 @@ class MemoryIntelligence:
 
     def __init__(self) -> None:
         self._causal_links: List[Dict[str, str]] = []
-        self._decision_chain: List[Dict[str, str]] = []
+        self._decision_chain: List[Dict[str, Any]] = []
 
     # ── 1. Knowledge Gap Detection ───────────────────────────────
 
@@ -226,7 +226,7 @@ class MemoryIntelligence:
 
     # ── 3. Decision Chain Tracking ───────────────────────────────
 
-    def track_decision(self, text: str, episode_id: str) -> Optional[Dict[str, str]]:
+    def track_decision(self, text: str, episode_id: str) -> Optional[Dict[str, Any]]:
         """Track decisions and their evolution over time."""
         if not _DECISION_RE.search(text):
             return None
