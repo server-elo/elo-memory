@@ -43,6 +43,7 @@ dependencies = [
     "hmmlearn>=0.3.0",
     "networkx>=2.6",
     "scikit-learn>=1.0",
+    "filelock>=3.0",
     "sentence-transformers>=2.2.0",
     "aiohttp>=3.8.0",
 ]

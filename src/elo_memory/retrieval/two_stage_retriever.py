@@ -19,9 +19,9 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from sklearn.metrics.pairwise import cosine_similarity as _sklearn_cosine
 
 from ..memory.episodic_store import Episode, EpisodicMemoryStore
+from ..utils import cosine_similarity as _cosine_similarity_fn
 
 
 @dataclass
@@ -248,10 +248,7 @@ class TwoStageRetriever:
 
     @staticmethod
     def _cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """Compute cosine similarity between two vectors."""
-        if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
-            return 0.0
-        return float(_sklearn_cosine(vec1.reshape(1, -1), vec2.reshape(1, -1))[0, 0])
+        return _cosine_similarity_fn(vec1, vec2)
 
     def retrieve_by_temporal_cue(self, time_description: str, k: int = 10) -> List[Episode]:
         """

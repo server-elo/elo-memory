@@ -16,7 +16,7 @@ License: BSL-1.1
 
 import logging
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
 __license__ = "BSL-1.1"
 
@@ -36,6 +36,20 @@ try:
     from .online_learning import OnlineLearner, OnlineLearningConfig
     from .memory.user_memory import UserMemory
     from .brain import EloBrain
+    from .governor import MemoryGovernor, GovernorConfig, DecisionContext, Action
+    from .causal_engine import CausalInferenceEngine, CausalEngineConfig
+    from .world_simulator import WorldSimulator, WorldSimConfig, Experience
+    from .evolution import ParametricEvolution, EvolutionConfig
+    from .consolidation.dream_cycle import DreamConsolidation, DreamConfig
+    from .retrieval.prefetcher import PredictivePrefetcher, PrefetchConfig
+    from .auditor import MemoryAuditor
+    from .federation import (
+        FederationClient,
+        MemoryPool,
+        MemoryModule,
+        DifferentialPrivacy,
+        PrivacyAccountant,
+    )
 
     __all__ = [
         "BayesianSurpriseEngine",
@@ -57,6 +71,35 @@ try:
         "OnlineLearningConfig",
         "UserMemory",
         "EloBrain",
+        # Governor
+        "MemoryGovernor",
+        "GovernorConfig",
+        "DecisionContext",
+        "Action",
+        # Causal Engine
+        "CausalInferenceEngine",
+        "CausalEngineConfig",
+        # World Simulator
+        "WorldSimulator",
+        "WorldSimConfig",
+        "Experience",
+        # Parametric Evolution
+        "ParametricEvolution",
+        "EvolutionConfig",
+        # Dream Consolidation
+        "DreamConsolidation",
+        "DreamConfig",
+        # Predictive Prefetcher
+        "PredictivePrefetcher",
+        "PrefetchConfig",
+        # Auditor
+        "MemoryAuditor",
+        # Federation
+        "FederationClient",
+        "MemoryPool",
+        "MemoryModule",
+        "DifferentialPrivacy",
+        "PrivacyAccountant",
         "__version__",
         "__author__",
         "__license__",

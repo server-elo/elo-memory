@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .episodic_store import EpisodicMemoryConfig, EpisodicMemoryStore, Episode
 from .entity_extractor import EntityExtractor
 from ..retrieval.two_stage_retriever import TwoStageRetriever, RetrievalConfig
+from ..utils import hash_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -364,13 +365,7 @@ class UserMemory:
 
     @staticmethod
     def _hash_embedding(text: str, dim: int = 384) -> np.ndarray:
-        """Simple hash-based embedding fallback."""
-        arr = np.zeros(dim)
-        for i, char in enumerate(text):
-            idx = (ord(char) * (i + 1)) % dim
-            arr[idx] += np.sin(ord(char) * 0.1) * 0.5
-        norm = np.linalg.norm(arr)
-        return arr / norm if norm > 0 else arr
+        return hash_embedding(text, dim)
 
     # ------------------------------------------------------------------
     # Topic detection
@@ -394,23 +389,28 @@ class UserMemory:
     def _is_near_duplicate(self, embedding: np.ndarray) -> bool:
         """Check if embedding is too similar to an existing episode.
 
-        Uses vector DB for large stores (O(log n)), falls back to direct
-        scan for small stores to avoid interference-resolution artefacts.
+        For small stores, does a direct scan which is cheap and avoids
+        interference-distorted embeddings.
+        For large stores, uses the vector DB with a slightly higher
+        threshold to account for interference-resolution noise.
         """
         episodes = self._store.episodes
         if len(episodes) <= 200:
             # Direct scan is cheap and avoids interference-distorted embeddings
             candidates = episodes
+            threshold = self.DUPLICATE_COSINE_THRESHOLD
         else:
-            # Use vector DB for large stores
+            # Use vector DB for large stores with a slightly higher threshold
+            # to account for interference-resolution noise
             candidates = self._store.retrieve_by_similarity(embedding, k=5)
+            threshold = self.DUPLICATE_COSINE_THRESHOLD + 0.03
 
         for ep in candidates:
             if ep.episode_id in self._superseded:
                 continue
             if ep.embedding is not None:
                 sim = float(np.dot(embedding, ep.embedding))
-                if sim > self.DUPLICATE_COSINE_THRESHOLD:
+                if sim > threshold:
                     return True
         return False
 

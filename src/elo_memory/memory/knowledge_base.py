@@ -322,11 +322,7 @@ class KnowledgeBase:
             else:
                 facts[key.lower()] = value
                 # "gRPC between services and PostgreSQL for the database"
-                # key=services, but also extract labeled parts
-                for part in parts:
-                    for cat in ("backend", "frontend", "database", "server", "client", "cache"):
-                        if cat in key.lower() or cat in s_lower:
-                            pass  # comma_list already handles this
+                # Labeled parts are handled by _extract_comma_list above
 
         # --- Pattern 3a2: Aspirational/preference: "should switch to X" / "considering X" ---
         pref_match = re.search(

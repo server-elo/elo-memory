@@ -72,8 +72,7 @@ class AsyncEmbeddingClient:
         self.base_url = base_url
         self.session: Optional[aiohttp.ClientSession] = None
         self.executor = ThreadPoolExecutor(max_workers=4)
-
-    _session_lock: Optional[asyncio.Lock] = None
+        self._session_lock: Optional[asyncio.Lock] = None
 
     async def get_session(self) -> aiohttp.ClientSession:
         """Get or create HTTP session (connection pooling, thread-safe)."""
@@ -201,10 +200,12 @@ class AsyncNeuroMemoryMCP:
             return
         self._backfill_scheduled = False
 
+        # Snapshot existing IDs under consistent read
         existing_ids = set()
         if self.memory.collection is not None and self.memory.collection.count() > 0:
             existing_ids = set(self.memory.collection.get()["ids"])
 
+        # Re-check at store level to avoid double-adding
         missing = [ep for ep in self.memory.episodes if ep.episode_id not in existing_ids]
         if not missing:
             return

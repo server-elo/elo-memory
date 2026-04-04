@@ -2,15 +2,14 @@
 Memory Intelligence
 ===================
 
-The layer that makes elo-memory fundamentally different from every competitor.
-Not just storage and retrieval — actual reasoning about what the brain knows.
+Reasoning layer over the knowledge base and episodic store.
 
-Features no competitor has:
-1. Knowledge gap detection — knows what it DOESN'T know
-2. Causal chains — tracks WHY decisions were made
+Capabilities:
+1. Knowledge gap detection — identifies missing context for active topics
+2. Causal chain extraction — tracks cause-effect relationships
 3. Decision evolution — traces how choices changed over time
-4. Temporal summaries — summarizes periods, not just retrieves
-5. Proactive suggestions — tells the agent what to ask next
+4. Temporal summarization — groups memories by theme over time periods
+5. Proactive suggestions — recommends follow-up questions
 """
 
 from __future__ import annotations
@@ -79,11 +78,7 @@ _DECISION_RE = re.compile(
 
 
 class MemoryIntelligence:
-    """Reasoning layer over the knowledge base and episodic store.
-
-    This is what makes elo-memory fundamentally different from competitors.
-    Not just retrieval — understanding.
-    """
+    """Reasoning layer over the knowledge base and episodic store."""
 
     def __init__(self) -> None:
         self._causal_links: List[Dict[str, str]] = []

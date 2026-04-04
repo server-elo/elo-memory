@@ -25,9 +25,11 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
-import pickle
+import threading
 from pathlib import Path
 import chromadb
+
+from ..utils import hash_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -206,23 +208,27 @@ class EpisodicMemoryStore:
             raise NotImplementedError("FAISS backend not yet implemented")
 
     _encoder = None
+    _encoder_lock = threading.Lock()
 
     @classmethod
     def _get_encoder(cls):
-        """Lazy-load SentenceTransformer encoder. Returns None if not installed."""
+        """Lazy-load SentenceTransformer encoder (thread-safe). Returns None if not installed."""
         if cls._encoder is not None:
             return cls._encoder
-        try:
-            from sentence_transformers import SentenceTransformer
+        with cls._encoder_lock:
+            if cls._encoder is not None:
+                return cls._encoder
+            try:
+                from sentence_transformers import SentenceTransformer
 
-            cls._encoder = SentenceTransformer("all-MiniLM-L6-v2")
-            return cls._encoder
-        except ImportError:
-            logger.warning(
-                "sentence-transformers is not installed. "
-                "Install it with: pip install sentence-transformers"
-            )
-            return None
+                cls._encoder = SentenceTransformer("all-MiniLM-L6-v2")
+                return cls._encoder
+            except ImportError:
+                logger.warning(
+                    "sentence-transformers is not installed. "
+                    "Install it with: pip install sentence-transformers"
+                )
+                return None
 
     def search(self, query, k: int = 5) -> List["Episode"]:
         """
@@ -406,12 +412,7 @@ class EpisodicMemoryStore:
         # Convert dict content to array via deterministic hash
         if isinstance(content, dict):
             text = content.get("text", json.dumps(content, sort_keys=True))
-            arr = np.zeros(self.config.embedding_dim)
-            for i, char in enumerate(text):
-                idx = (ord(char) * (i + 1)) % self.config.embedding_dim
-                arr[idx] += np.sin(ord(char) * 0.1) * 0.5
-            norm = np.linalg.norm(arr)
-            return arr / norm if norm > 0 else arr
+            return hash_embedding(text, self.config.embedding_dim)
 
         # Simple projection for now (replace with real encoder)
         if len(content) < self.config.embedding_dim:
@@ -665,30 +666,51 @@ class EpisodicMemoryStore:
         self.mark_consolidated()
 
     def _offload_episode(self, episode: Episode):
-        """Offload episode to disk storage."""
+        """Offload episode to disk storage as JSON."""
         if not self.persistence_path:
             return
         try:
             offload_dir = self.persistence_path / "offloaded"
             offload_dir.mkdir(exist_ok=True)
-            file_path = offload_dir / f"{episode.episode_id}.pkl"
-            with open(file_path, "wb") as f:
-                pickle.dump(episode, f)
+            file_path = offload_dir / f"{episode.episode_id}.json"
+            with open(file_path, "w") as f:
+                json.dump(episode.to_dict(), f)
         except Exception as e:
             logger.error("Failed to offload episode %s: %s", episode.episode_id, e)
 
     def _load_offloaded_episode(self, episode_id: str) -> Optional[Episode]:
-        """Load episode from disk storage."""
+        """Load episode from disk storage (JSON, with legacy pickle fallback)."""
         if not self.persistence_path:
             return None
 
-        file_path = self.persistence_path / "offloaded" / f"{episode_id}.pkl"
-        if file_path.exists():
+        # Try JSON first
+        json_path = self.persistence_path / "offloaded" / f"{episode_id}.json"
+        if json_path.exists():
             try:
-                with open(file_path, "rb") as f:
-                    return pickle.load(f)
+                with open(json_path, "r") as f:
+                    return Episode.from_dict(json.load(f))
             except Exception as e:
                 logger.error("Failed to load offloaded episode %s: %s", episode_id, e)
+                return None
+
+        # Legacy pickle fallback (read-only, for migration)
+        pkl_path = self.persistence_path / "offloaded" / f"{episode_id}.pkl"
+        if pkl_path.exists():
+            logger.warning(
+                "Episode %s is in legacy pickle format. "
+                "Re-offloading will convert it to JSON.",
+                episode_id,
+            )
+            try:
+                import pickle  # noqa: S403 — legacy migration only
+                with open(pkl_path, "rb") as f:
+                    episode = pickle.load(f)  # noqa: S301
+                # Re-save as JSON and remove pickle
+                self._offload_episode(episode)
+                pkl_path.unlink()
+                return episode
+            except Exception as e:
+                logger.error("Failed to load legacy pickle episode %s: %s", episode_id, e)
 
         return None
 

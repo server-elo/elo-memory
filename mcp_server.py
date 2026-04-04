@@ -50,16 +50,17 @@ _embedding_model_loaded = False
 
 
 def _ensure_embedding_model():
-    """Lazy-load embedding model on first use, not at import time."""
+    """Lazy-load embedding model on first use, thread-safe."""
     global EMBEDDING_MODEL, EMBEDDING_DIM, _embedding_model_loaded
-    if _embedding_model_loaded:
-        return
-    _embedding_model_loaded = True
-    EMBEDDING_MODEL = _load_embedding_model()
-    if EMBEDDING_MODEL is not None:
-        EMBEDDING_DIM = EMBEDDING_MODEL.get_sentence_embedding_dimension()
-    else:
-        logger.info("Using hash embeddings (dim=%d)", EMBEDDING_DIM)
+    with _mcp_lock:
+        if _embedding_model_loaded:
+            return
+        _embedding_model_loaded = True
+        EMBEDDING_MODEL = _load_embedding_model()
+        if EMBEDDING_MODEL is not None:
+            EMBEDDING_DIM = EMBEDDING_MODEL.get_sentence_embedding_dimension()
+        else:
+            logger.info("Using hash embeddings (dim=%d)", EMBEDDING_DIM)
 
 
 class NeuroMemoryMCP:

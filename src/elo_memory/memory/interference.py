@@ -14,7 +14,8 @@ References:
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
-from sklearn.metrics.pairwise import cosine_similarity as _sklearn_cosine
+
+from ..utils import cosine_similarity as _cosine_similarity_fn
 
 
 @dataclass
@@ -148,7 +149,4 @@ class InterferenceResolver:
 
     @staticmethod
     def _cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """Compute cosine similarity."""
-        if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
-            return 0.0
-        return float(_sklearn_cosine(vec1.reshape(1, -1), vec2.reshape(1, -1))[0, 0])
+        return _cosine_similarity_fn(vec1, vec2)

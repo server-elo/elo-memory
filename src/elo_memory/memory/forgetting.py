@@ -46,7 +46,7 @@ class ForgettingEngine:
         initial_activation: float,
         timestamp: datetime,
         rehearsal_count: int = 0,
-        current_time: datetime = None,
+        current_time: Optional[datetime] = None,
     ) -> float:
         """
         Compute current memory activation.
