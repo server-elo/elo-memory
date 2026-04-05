@@ -250,19 +250,30 @@ class MemoryAuditor:
     def _hash_episode(episode: Episode) -> str:
         """Compute deterministic SHA-256 hash of episode content.
 
-        Note: episode_id is intentionally excluded so that identical
-        content produces the same hash regardless of its assigned ID.
+        Normalizes content so numpy arrays, lists, and dicts all produce
+        the same hash regardless of save/load cycle.
         """
         # Build a canonical representation
         parts = []
 
-        # Content
-        if isinstance(episode.content, dict):
-            parts.append(json.dumps(episode.content, sort_keys=True))
-        elif isinstance(episode.content, np.ndarray):
-            parts.append(episode.content.tobytes().hex())
+        # Content — normalize arrays/lists to consistent string
+        content = episode.content
+        if isinstance(content, np.ndarray):
+            parts.append(content.tobytes().hex())
+        elif isinstance(content, list):
+            # List from deserialized numpy array — treat same as ndarray
+            parts.append(str(content))
+        elif isinstance(content, dict):
+            # Normalize numpy arrays inside dict to lists
+            normalized = {}
+            for k, v in sorted(content.items()):
+                if isinstance(v, np.ndarray):
+                    normalized[k] = v.tolist()
+                else:
+                    normalized[k] = v
+            parts.append(json.dumps(normalized, sort_keys=True))
         else:
-            parts.append(str(episode.content))
+            parts.append(str(content))
 
         # Timestamp
         parts.append(episode.timestamp.isoformat())

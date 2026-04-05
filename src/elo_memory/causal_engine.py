@@ -116,9 +116,12 @@ class CausalInferenceEngine:
                 cause = parts["cause"]
                 effect = parts["effect"]
                 # Skip very short or very long extractions
-                if len(cause) < 3 or len(effect) < 3:
+                if len(cause) < 5 or len(effect) < 5:
                     continue
                 if len(cause) > 200 or len(effect) > 200:
+                    continue
+                # Reject bad extractions
+                if self._is_bad_extraction(cause, effect):
                     continue
                 links.append(CausalLink(
                     cause=cause,
@@ -164,6 +167,23 @@ class CausalInferenceEngine:
                 first_seen=link.first_seen,
                 last_seen=link.last_seen,
             )
+
+    @staticmethod
+    def _is_bad_extraction(cause: str, effect: str) -> bool:
+        """Reject causal extractions that are clearly wrong."""
+        # Cause ends with conjunction (e.g., "X and caused Y" → "X and")
+        if re.search(r"\s+(and|but|or|yet|so|then)\s*$", cause, re.I):
+            return True
+        # Cause is too short to be meaningful
+        if len(cause.split()) < 3:
+            return True
+        # Effect is essentially empty (just a determiner or pronoun)
+        if len(effect.split()) < 3:
+            return True
+        # Both cause and effect start with lowercase — likely a mangled split
+        if cause[0].islower() and effect[0].islower():
+            return True
+        return False
 
     @staticmethod
     def _normalize(text: str) -> str:

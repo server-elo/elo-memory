@@ -205,9 +205,9 @@ _TOPIC_RULES: Dict[str, List[str]] = {
 # ---------------------------------------------------------------------------
 
 _TRANSITION_PATTERNS = [
-    # "switched from X to Y", "moved from X to Y", "migrated from X to Y"
+    # "switched from X to Y", "moved from X to Y", "migrated from X to Y", "relocated from X to Y"
     re.compile(
-        r"(?:I\s+)?(?:switched|moved|migrated|transitioned|changed|converted|upgraded)"
+        r"(?:I\s+)?(?:switched|moved|migrated|transitioned|changed|converted|upgraded|relocated|transferred)"
         r"\s+from\s+(.+?)\s+to\s+(.+?)(?:\.|,|$)",
         re.IGNORECASE,
     ),
@@ -219,6 +219,11 @@ _TRANSITION_PATTERNS = [
     # "no longer using X, now using Y"
     re.compile(
         r"(?:I(?:'m|\s+am)\s+)?no\s+longer\s+(?:using|on|at)\s+(.+?),?\s*(?:now|currently)\s+(?:using|on|at)\s+(.+?)(?:\.|,|$)",
+        re.IGNORECASE,
+    ),
+    # "left X for Y", "quit X to join Y"
+    re.compile(
+        r"(?:I\s+)?(?:left|quit|departed)\s+(.+?)\s+(?:for|to\s+join|and\s+joined)\s+(.+?)(?:\.|,|$)",
         re.IGNORECASE,
     ),
 ]
@@ -234,6 +239,9 @@ _IMPLICIT_OLD_VALUES: Dict[str, List[str]] = {
     "graduated": ["student", "studying"],
     "quit": ["employed", "working at"],
     "fired": ["employed", "working at"],
+    "relocated": [],  # Location transitions handled by explicit pattern
+    "moved": [],      # Same
+    "transferred": [],  # Same
 }
 
 # Patterns that indicate a life-change with implicit old values
@@ -250,10 +258,11 @@ _IMPLICIT_PATTERNS = [
 
 _DERIVED_FACT_PATTERNS = [
     # "switched from X to Y" → "Currently using Y"
+    # Only for tech/product — NOT for location transitions
     (
         re.compile(
-            r"(?:I\s+)?(?:switched|moved|migrated|transitioned|changed|converted|upgraded)"
-            r"\s+from\s+.+?\s+to\s+(.+?)(?:\s*[,]|$)",
+            r"(?:I\s+)?(?:switched|migrated|transitioned|changed|converted|upgraded)"
+            r"\s+from\s+.+?\s+to\s+(.+?)(?:\s+(?:in|on|at|for|because|after|when|where|who|which|that|but|and|with|during|while|until|unless|since)|\s*[,]|$)",
             re.IGNORECASE,
         ),
         "Currently using {0}",
@@ -261,7 +270,7 @@ _DERIVED_FACT_PATTERNS = [
     # "replaced X with Y" → "Currently using Y"
     (
         re.compile(
-            r"(?:I\s+)?replaced\s+.+?\s+with\s+(.+?)(?:\s*[,]|$)",
+            r"(?:I\s+)?replaced\s+.+?\s+with\s+(.+?)(?:\s+(?:in|on|at|for|because|after|when|where|who|which|that|but|and|with|during|while|until|unless|since)|\s*[,]|$)",
             re.IGNORECASE,
         ),
         "Currently using {0}",
