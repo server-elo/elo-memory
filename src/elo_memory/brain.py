@@ -1,527 +1,383 @@
-"""EloBrain -- agent middleware that combines episodic memory with knowledge.
+#!/usr/bin/env python3
+"""
+My Memory Brain — self-bootstrapping CLI.
 
-Provides a simple ``think()`` loop and ``prepare() / process_turn()`` hooks
-for framework-agnostic integration.
+Zero setup: creates ~/.elo-memory/, starts the server, runs your command.
+For a new user: python3 brain.py store "hello" — it handles everything.
 
-All 8 advanced modules are wired into the core flow:
-- Governor gates what gets stored (like selective attention)
-- Causal engine tracks why things happen
-- World simulator segments episodes into replayable experiences
-- Evolution adapts embeddings from retrieval feedback
-- Dream cycle runs when enough experience accumulates
-- Prefetcher anticipates what you'll need next
-- Auditor seals every memory for integrity
-- Federation is opt-in for multi-agent sharing
+Usage:  python3 brain.py <action> [args...]
+  store  "text"           → store a fact
+  recall "query" [k]      → search memories
+  think  "msg" [k]        → full turn
+  think  "msg" --response "text"  → turn with answer
+  extract "text"          → pull facts from text
+  update  --old X --new Y → correct a memory
+  forget  "text"          → erase matching
+  briefing                → everything I know (with summary)
+  new                     → what changed since last session
+  facts                   → active facts
+  stats                   → brain stats
+  dream                   → consolidate
+  verify                  → integrity check
+  log                     → recent conversations
+  start [--port N]        → start server
+  stop                    → stop server
+  status                  → server alive?
 """
 
-from __future__ import annotations
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+import urllib.parse
 
-import logging
-import re
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional
+# ── Paths ─────────────────────────────────────────────────────────
 
-import numpy as np
-
-from .memory.user_memory import UserMemory
-from .memory.knowledge_base import KnowledgeBase
-from .memory.intelligence import MemoryIntelligence
-from .governor import MemoryGovernor, DecisionContext, Action
-from .causal_engine import CausalInferenceEngine
-from .world_simulator import WorldSimulator
-from .evolution import ParametricEvolution
-from .consolidation.dream_cycle import DreamConsolidation
-from .retrieval.prefetcher import PredictivePrefetcher
-from .auditor import MemoryAuditor
-
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Message-filtering patterns
-# ---------------------------------------------------------------------------
-
-_SKIP_MESSAGE_PATTERNS: List[re.Pattern] = [
-    re.compile(r"^\s*(hi|hello|hey|yo|sup|howdy|hiya)\s*[!.?]*\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(thanks|thank\s*you|thx|ty|cheers)\s*[!.?]*\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(ok|okay|sure|got\s*it|alright|cool|nice|great)\s*[!.?]*\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(yes|no|yeah|nah|yep|nope)\s*[!.?]*\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(bye|goodbye|see\s*ya|later|cya)\s*[!.?]*\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what\s+time\s+is\s+it\s*\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*how\s+are\s+you\s*\??\s*$", re.IGNORECASE),
-]
-
-_HAS_INFO_RE = re.compile(
-    r"(?:my\s+name\s+is|i(?:'m|\s+am)\s+\w{2,}|i\s+(?:live|work|use|like|love|hate|prefer|moved|switched)"
-    r"|remember\s+(?:that|my)|i\s+have\s+\w+|i\s+(?:was|used\s+to))",
-    re.IGNORECASE,
-)
-
-_COMMITMENT_PATTERNS: List[re.Pattern] = [
-    re.compile(r"I'll\s+(.+?)(?:\.|$)", re.IGNORECASE),
-    re.compile(r"I've\s+(?:noted|recorded|saved|remembered)\s+(.+?)(?:\.|$)", re.IGNORECASE),
-    re.compile(
-        r"I(?:'ll|\s+will)\s+(?:check|look\s+into|investigate|follow\s+up\s+on|get\s+back\s+to\s+you\s+(?:on|about))\s+(.+?)(?:\.|$)",
-        re.IGNORECASE,
-    ),
-    re.compile(r"I(?:'ll|\s+will)\s+(?:make\s+sure|ensure)\s+(.+?)(?:\.|$)", re.IGNORECASE),
-]
+ELO_DIR = os.path.expanduser("~/.elo-memory")
+# Also look within the package
+SERVER_SCRIPT = os.path.join(ELO_DIR, "memory_server.py")
+SERVER_LOG = os.path.join(ELO_DIR, "server.log")
+PID_FILE = os.path.join(ELO_DIR, "server.pid")
+SERVER = "http://127.0.0.1:9876"
+USER = os.environ.get("MEMORY_USER", "lorenc")
 
 
-def _should_skip(message: str) -> bool:
-    if _HAS_INFO_RE.search(message):
+# ── Bootstrapping ─────────────────────────────────────────────────
+
+def _ensure_server():
+    """Create directory and start server if needed. Returns True if server is up."""
+    # Check if already running
+    try:
+        resp = urllib.request.urlopen(f"{SERVER}/health", timeout=2)
+        return True
+    except Exception:
+        pass
+
+    # Create directory structure
+    os.makedirs(ELO_DIR, exist_ok=True)
+    os.makedirs(os.path.join(ELO_DIR, "transcripts"), exist_ok=True)
+
+    # Find memory_server.py
+    server_script = SERVER_SCRIPT
+    if not os.path.exists(server_script):
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        server_script = os.path.join(this_dir, "memory_server.py")
+    if not os.path.exists(server_script):
+        try:
+            import elo_memory
+            pkg_dir = os.path.dirname(elo_memory.__file__)
+            for candidate in [
+                os.path.join(os.path.dirname(pkg_dir), "memory_server.py"),
+                os.path.join(os.path.dirname(os.path.dirname(pkg_dir)), "memory_server.py"),
+            ]:
+                if os.path.exists(candidate):
+                    server_script = candidate
+                    break
+        except ImportError:
+            pass
+
+    if not os.path.exists(server_script):
         return False
-    for pattern in _SKIP_MESSAGE_PATTERNS:
-        if pattern.match(message):
-            return True
+
+    # Start server
+    logf = open(SERVER_LOG, "w")
+    import subprocess
+    proc = subprocess.Popen(
+        [sys.executable, server_script, "--port", "9876", "--user", USER],
+        stdout=logf, stderr=logf,
+    )
+
+    # Wait for it to come up (model loading takes 10-25s)
+    import time
+    for _ in range(60):
+        time.sleep(0.5)
+        try:
+            resp = urllib.request.urlopen(f"{SERVER}/health", timeout=2)
+            data = json.loads(resp.read())
+            if data.get("ok"):
+                with open(PID_FILE, "w") as f:
+                    f.write(str(proc.pid))
+                return True
+        except Exception:
+            continue
+
     return False
 
 
-def _extract_commitments(text: str) -> List[str]:
-    commitments = []
-    for pattern in _COMMITMENT_PATTERNS:
-        for m in pattern.finditer(text):
-            commitments.append(m.group(1).strip())
-    return commitments
-
-
-class EloBrain:
-    """Agent middleware combining UserMemory with conversational intelligence."""
-
-    # How many episodes between automatic dream cycles
-    _DREAM_INTERVAL = 200
-
-    def __init__(
-        self,
-        user_id: str,
-        persistence_path: str = "./memories",
-        system_prompt: Optional[str] = None,
-    ):
-        self.user_id = user_id
-        self._system_prompt = system_prompt or "You are a helpful assistant with memory."
-        self._memory = UserMemory(
-            user_id=user_id,
-            persistence_path=persistence_path,
-        )
-        self._kb = KnowledgeBase(
-            persistence_path=str(self._memory._user_dir / "kb"),
-        )
-        self._intelligence = MemoryIntelligence()
-
-        user_dir = str(self._memory._user_dir)
-
-        # 1. Governor — learns what to store vs skip
-        self._governor = MemoryGovernor(persistence_path=user_dir)
-
-        # 2. Causal engine — tracks cause/effect from language
-        self._causal = CausalInferenceEngine()
-        self._causal.load(self._memory._user_dir / "causal_graph.json")
-
-        # 3. World simulator — groups episodes into experiences
-        self._world_sim = WorldSimulator(self._memory._store)
-        self._world_sim.load(self._memory._user_dir / "world_sim.json")
-
-        # 4. Evolution — adapts embeddings from retrieval feedback
-        self._evolution = ParametricEvolution(embedding_dim=self._memory.embedding_dim)
-        self._evolution.load(self._memory._user_dir / "evolution.json")
-
-        # 5. Dream consolidation — creative replay
-        self._dreamer = DreamConsolidation()
-        self._episodes_since_dream = 0
-
-        # 6. Prefetcher — anticipates next queries
-        self._prefetcher = PredictivePrefetcher()
-
-        # 7. Auditor — seals every memory in a hash chain
-        self._auditor = MemoryAuditor(persistence_path=user_dir)
-
-    # ------------------------------------------------------------------
-    # Core loop
-    # ------------------------------------------------------------------
-
-    def think(
-        self,
-        user_message: str,
-        llm_fn: Callable[[str], str],
-        k: int = 7,
-    ) -> str:
-        """Full think loop: prepare -> call LLM -> process turn."""
-        context = self.prepare(user_message, k=k)
-        prompt = context["system"] + "\n\nUser: " + context["user_message"]
-        response = llm_fn(prompt)
-        self.process_turn(user_message, assistant_response=response)
-        return response
-
-    # ------------------------------------------------------------------
-    # Prepare — where retrieval happens
-    # ------------------------------------------------------------------
-
-    def prepare(self, user_message: str, k: int = 7) -> Dict[str, Any]:
-        """Build an enriched prompt with memory context.
-
-        Uses prefetcher cache, evolution-adapted embeddings, causal reasoning,
-        and experience context to build the richest possible prompt.
-        """
-        # 6. Prefetcher: check warm cache before doing any retrieval
-        cached = self._prefetcher.get_cached(user_message)
-
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            fut_kb_answer = pool.submit(self._kb.query, user_message)
-            fut_kb_facts = pool.submit(self._kb.get_all)
-            fut_memories = pool.submit(self._memory.recall, user_message, k) if not cached else None
-            fut_facts = pool.submit(self._memory.get_facts)
-            fut_profile = pool.submit(self._memory.get_profile)
-
-            kb_answer = fut_kb_answer.result()
-            kb_facts = fut_kb_facts.result()
-            memories = cached if cached is not None else (fut_memories.result() if fut_memories else [])
-            facts = fut_facts.result()
-            profile = fut_profile.result()
-
-        # 4. Evolution: record retrieval feedback — the fact that these
-        # memories were recalled means they're potentially relevant.
-        # The actual relevance signal comes later (in process_turn when
-        # the user continues the conversation on the same topic).
-        if memories:
-            query_emb = self._memory._embed(user_message)
-            for text, score in memories[:3]:
-                result_emb = self._memory._embed(text)
-                # Score > 0.5 = likely relevant retrieval
-                self._evolution.record_feedback(query_emb, result_emb, relevance=min(1.0, score))
-
-        # Build system prompt sections
-        sections = [self._system_prompt]
-
-        if kb_facts:
-            sections.append("\n## Current facts (Knowledge Base)")
-            for key, value in list(kb_facts.items())[:20]:
-                sections.append(f"- {key}: {value}")
-
-        if kb_answer:
-            sections.append(f"\n## Direct answer from KB\n{kb_answer}")
-
-        if memories:
-            sections.append("\n## Related memories")
-            for text, score in memories:
-                sections.append(f"- [{score:.2f}] {text}")
-
-        # 2. Causal engine: answer "why" with graph traversal
-        if re.search(r"\bwhy\b", user_message, re.IGNORECASE):
-            reasons = self._intelligence.get_reasons_for(user_message)
-            causal_reasons = self._causal.query_causes(user_message, depth=3)
-            if reasons or causal_reasons:
-                sections.append("\n## Reasons (causal links)")
-                for r in reasons[:3]:
-                    sections.append(f"- {r['cause']} → {r['effect']}")
-                for r in causal_reasons[:3]:
-                    sections.append(f"- [{r['strength']:.1f}] {r['cause']} → {r['effect']}")
-
-        # 2. Causal engine: answer "what if" with counterfactuals
-        if re.search(r"\bwhat\s+if\b", user_message, re.IGNORECASE):
-            cf = self._causal.counterfactual(user_message)
-            if cf.get("lost_effects"):
-                sections.append("\n## Counterfactual effects")
-                for effect in cf["lost_effects"][:5]:
-                    sections.append(f"- Would lose: {effect}")
-
-        # 2. Causal engine: answer "what caused" / "what led to"
-        if re.search(r"what\s+(?:caused|led\s+to|resulted\s+in)", user_message, re.IGNORECASE):
-            effects = self._causal.query_effects(user_message, depth=2)
-            if effects:
-                sections.append("\n## Effects chain")
-                for e in effects[:5]:
-                    sections.append(f"- {e['cause']} → {e['effect']}")
-
-        # 3. World simulator: if the user asks about a time period,
-        # include experience-level context (not just individual memories)
-        if re.search(r"\b(last\s+(?:week|month|session)|recently|earlier|before)\b", user_message, re.IGNORECASE):
-            if not self._world_sim.experiences:
-                self._world_sim.segment_experiences()
-            if self._world_sim.experiences:
-                sections.append("\n## Recent experiences")
-                for exp in self._world_sim.experiences[-3:]:
-                    n = len(exp.episode_ids)
-                    locations = exp.metadata.get("locations", [])
-                    entities = exp.metadata.get("entities", [])
-                    parts = [f"{n} events"]
-                    if locations:
-                        parts.append(f"at {', '.join(locations[:3])}")
-                    if entities:
-                        parts.append(f"involving {', '.join(entities[:3])}")
-                    sections.append(f"- Experience: {' '.join(parts)}")
-
-        # Knowledge gaps
-        all_texts = [t for t, _ in facts]
-        gaps = self._intelligence.detect_gaps(kb_facts, all_texts)
-
-        # Proactive suggestions
-        suggestions = self._intelligence.suggest_next_actions(kb_facts, facts)
-
-        # 6. Prefetcher: include predictions as suggestions
-        topics = self._memory._detect_topics(user_message)
-        predictions = self._prefetcher.predict_next_queries(current_topics=topics)
-        predicted_topics = [p["value"] for p in predictions if p["type"] == "topic" and p["confidence"] > 0.3]
-        if predicted_topics:
-            suggestions.append(f"Likely next topics: {', '.join(predicted_topics)}")
-
-        system = "\n".join(sections)
-
-        return {
-            "system": system,
-            "user_message": user_message,
-            "memories_used": len(memories),
-            "user_profile": profile,
-            "knowledge_gaps": gaps,
-            "suggestions": suggestions,
-        }
-
-    # ------------------------------------------------------------------
-    # Process turn — where storage happens
-    # ------------------------------------------------------------------
-
-    def process_turn(
-        self,
-        user_message: str,
-        assistant_response: Optional[str] = None,
-    ) -> None:
-        """Store the interaction in memory.
-
-        Governor decides what to store. Causal engine tracks relationships.
-        Auditor seals each stored memory. Prefetcher learns patterns.
-        Dream cycle auto-triggers when enough experience accumulates.
-        """
-        self._kb.update(user_message)
-
-        if not _should_skip(user_message):
-            # 1. Governor: compute context features and decide
-            store = self._memory._store
-            max_sim = 0.0
-            embedding = self._memory._embed(user_message)
-
-            # 4. Evolution: adapt the query embedding before similarity check
-            adapted_emb = self._evolution.adapt_embedding(embedding)
-
-            # Compute max similarity to existing memories (novelty signal)
-            if store.episodes:
-                recent = store.episodes[-min(50, len(store.episodes)):]
-                for ep in recent:
-                    if ep.embedding is not None:
-                        sim = float(np.dot(adapted_emb, ep.embedding))
-                        if sim > max_sim:
-                            max_sim = sim
-
-            topics = self._memory._detect_topics(user_message)
-            context = DecisionContext(
-                surprise=max(0, 1.0 - max_sim),  # Novel = high surprise
-                max_similarity=max_sim,
-                entity_count=len(self._memory._entity_extractor.extract_flat(user_message)),
-                storage_utilization=len(store.episodes) / max(1, store.config.max_episodes),
-                topic_overlap=1.0 if topics else 0.0,
-            )
-            action = self._governor.decide(context)
-            # During cold-start (< 200 decisions), never skip — the governor
-            # doesn't have enough reward data to make good skip decisions yet.
-            # Like a child: absorb everything first, learn to filter later.
-            if action == Action.SKIP and self._governor.total_decisions < 200:
-                action = Action.ENCODE
-            should_store, adjusted_importance = self._governor.apply_action(action, 0.5)
-
-            if should_store:
-                result = self._memory.store(user_message)
-                episode_id = (result or {}).get("episode_id", "")
-
-                if episode_id:
-                    # 1. Governor: track for delayed reward
-                    self._governor.record_decision(action, context, episode_id)
-
-                    # 2. Causal engine: extract cause/effect relationships
-                    self._causal.ingest(user_message, episode_id)
-
-                    # 7. Auditor: seal into hash chain
-                    sealed_ep = store._episode_index.get(episode_id)
-                    if sealed_ep:
-                        self._auditor.add_to_chain(sealed_ep)
-
-                    # Track episode for dream cycle
-                    self._episodes_since_dream += 1
-
-                self._intelligence.extract_causal_links(user_message, episode_id)
-                self._intelligence.track_decision(user_message, episode_id)
-            else:
-                # Governor skipped — still feed intelligence
-                self._intelligence.extract_causal_links(user_message, "")
-
-            # 6. Prefetcher: learn from this query, warm cache for predicted next
-            entities = []
-            if should_store and result and result.get("entities"):
-                entities = result["entities"]
-            self._prefetcher.observe_query(
-                user_message, topics=topics, entities=entities,
-            )
-            predictions = self._prefetcher.predict_next_queries(
-                current_topics=topics, current_entities=entities,
-            )
-            if predictions:
-                self._prefetcher.prefetch(predictions, self._memory.recall)
-
-        # Store assistant commitments
-        if assistant_response:
-            commitments = _extract_commitments(assistant_response)
-            seen = set()
-            for commitment in commitments:
-                if commitment not in seen:
-                    seen.add(commitment)
-                    self._memory.store(f"[assistant commitment] {commitment}")
-
-        # 5. Dream: auto-trigger when enough experience has accumulated
-        if self._episodes_since_dream >= self._DREAM_INTERVAL:
-            logger.info("Auto-triggering dream cycle (%d episodes)", self._episodes_since_dream)
-            self.dream()
-            self._episodes_since_dream = 0
-
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
-
-    def what_i_know(self) -> Dict[str, Any]:
-        """Return everything the brain knows about this user."""
-        facts = self._memory.get_facts()
-        profile = self._memory.get_profile()
-
-        all_topics: set[str] = set()
-        for ep in self._memory._store.episodes:
-            if ep.episode_id in self._memory._superseded:
-                continue
-            for t in ep.metadata.get("topics", []):
-                all_topics.add(t)
-
-        all_texts = [t for t, _ in facts]
-        gaps = self._intelligence.detect_gaps(self._kb.get_all(), all_texts)
-        suggestions = self._intelligence.suggest_next_actions(self._kb.get_all(), facts)
-
-        return {
-            "knowledge": self._kb.get_all(),
-            "facts": facts,
-            "entities": profile.get("entities", {}),
-            "topics": sorted(all_topics),
-            "total_memories": profile.get("total_memories", 0),
-            "superseded": len(self._memory._superseded),
-            "knowledge_gaps": gaps,
-            "suggestions": suggestions,
-            "causal_links": len(self._intelligence._causal_links),
-            "decisions_tracked": len(self._intelligence._decision_chain),
-            "causal_graph": self._causal.get_statistics(),
-            "governor": self._governor.get_policy_summary(),
-            "world_sim": self._world_sim.get_statistics(),
-            "evolution": self._evolution.get_statistics(),
-            "dream": self._dreamer.get_statistics(),
-            "prefetcher": self._prefetcher.get_statistics(),
-            "auditor": self._auditor.get_statistics(),
-        }
-
-    # ------------------------------------------------------------------
-    # GDPR forget
-    # ------------------------------------------------------------------
-
-    def forget(self, text: str) -> None:
-        """Supersede any memories matching *text* (GDPR erasure)."""
-        text_lower = text.lower()
-        with self._memory._lock:
-            for ep in self._memory._store.episodes:
-                ep_text = self._memory._episode_text(ep).lower()
-                if text_lower in ep_text:
-                    self._memory._superseded.add(ep.episode_id)
-            if self._memory._store.config.enable_disk_offload and self._memory._store.persistence_path:
-                offload_dir = self._memory._store.persistence_path / "offloaded"
-                if offload_dir.exists():
-                    import json as _json
-                    for ep_file in offload_dir.glob("*.json"):
-                        try:
-                            with open(ep_file, "r") as f:
-                                from .memory.episodic_store import Episode
-                                ep = Episode.from_dict(_json.load(f))
-                            ep_text = self._memory._episode_text(ep).lower()
-                            if text_lower in ep_text:
-                                self._memory._superseded.add(ep.episode_id)
-                        except Exception as e:
-                            logger.error(
-                                "GDPR forget: failed to read offloaded episode %s: %s",
-                                ep_file.name, e,
-                            )
-                            continue
-            self._memory.save()
-
-    # ------------------------------------------------------------------
-    # Advanced capabilities
-    # ------------------------------------------------------------------
-
-    def dream(self) -> Any:
-        """Run a dream consolidation cycle.
-
-        NREM: replay important memories. REM: generate creative recombinations.
-        Abstraction: extract principles from clusters. Pruning: drop dead weight.
-
-        After dreaming, re-segment experiences (3. World Simulator) and
-        run an evolution update (4. Evolution) on the distilled knowledge.
-        """
-        result = self._dreamer.dream(self._memory._store)
-
-        # 3. World simulator: re-segment after consolidation reshuffled things
-        self._world_sim.segment_experiences()
-
-        # 4. Evolution: use the dream as a training signal
-        if result.episodes_replayed > 0:
-            self._evolution.update_weights()
-
-        # 2. Causal engine: decay old links that haven't been reinforced
-        self._causal.decay_strengths(days_elapsed=1.0)
-
-        return result
-
-    def counterfactual(self, removed_cause: str) -> Dict[str, Any]:
-        """Answer 'What if X had not happened?'"""
-        return self._causal.counterfactual(removed_cause)
-
-    def verify_integrity(self) -> Dict[str, Any]:
-        """Verify the cryptographic integrity of all memories."""
-        chain_report = self._auditor.verify_chain()
-        tampered = []
-        for ep in self._memory._store.episodes:
-            if not self._auditor.verify_episode(ep):
-                tampered.append(ep.episode_id)
-        chain_report["tampered_episodes"] = tampered
-        return chain_report
-
-    def get_audit_log(self, episode_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
-        return self._auditor.get_audit_log(episode_id=episode_id, limit=limit)
-
-    def replay_experience(self, experience_id: str) -> List[Dict[str, Any]]:
-        """Re-live a past experience step by step."""
-        return self._world_sim.replay(experience_id)
-
-    def segment_experiences(self) -> List[Dict[str, Any]]:
-        """Auto-segment all episodes into coherent experiences."""
-        exps = self._world_sim.segment_experiences()
-        return [e.to_dict() for e in exps]
-
-    def evolve(self) -> Dict[str, Any]:
-        """Manually trigger a parametric evolution update."""
-        return self._evolution.update_weights()
-
-    def get_causal_graph_stats(self) -> Dict[str, Any]:
-        return self._causal.get_statistics()
-
-    def get_governor_policy(self) -> Dict[str, Any]:
-        return self._governor.get_policy_summary()
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    def close(self) -> None:
-        """Persist everything and release resources."""
-        self._memory.close()
-        self._governor.save()
-        self._causal.save(self._memory._user_dir / "causal_graph.json")
-        self._world_sim.save(self._memory._user_dir / "world_sim.json")
-        self._evolution.save(self._memory._user_dir / "evolution.json")
-        self._auditor.save()
+# ── HTTP helpers ──────────────────────────────────────────────────
+
+def _post(path, data):
+    if not _ensure_server():
+        _die("cannot start memory server — is memory_server.py next to brain.py?")
+    body = json.dumps(data).encode()
+    req = urllib.request.Request(SERVER + path, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def _get(path):
+    if not _ensure_server():
+        _die("cannot start memory server — is memory_server.py next to brain.py?")
+    with urllib.request.urlopen(SERVER + path, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def _die(msg):
+    print(f"✗ {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── Actions ───────────────────────────────────────────────────────
+
+def store(text):
+    try:
+        r = _post("/store", {"user": USER, "text": text})
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+    if r.get("stored"):
+        return f"stored [{', '.join(r.get('entities', []))}]" if r.get('entities') else "stored"
+    return f"skipped ({r.get('reason', 'dup')})"
+
+
+def recall(query, k=7):
+    try:
+        r = _get(f"/recall?user={USER}&q={urllib.parse.quote(query)}&k={k}")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+    return r.get("results", [])
+
+
+def think(message, k=7, response=""):
+    data = {"user": USER, "message": message, "k": k}
+    if response:
+        data["response"] = response
+    try:
+        return _post("/think", data)
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def extract(text):
+    try:
+        return _post("/extract", {"user": USER, "text": text})
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def update(old, new):
+    try:
+        r = _post("/update", {"user": USER, "old": old, "new": new})
+        return "updated" if r.get("updated") else "failed"
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def forget(text):
+    try:
+        _post("/forget", {"user": USER, "text": text})
+        return "forgotten"
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def briefing():
+    try:
+        return _get(f"/brief?user={USER}&summary=1")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def new():
+    try:
+        return _get(f"/new?user={USER}")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def facts():
+    try:
+        return _get(f"/facts?user={USER}")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def stats():
+    try:
+        return _get(f"/stats?user={USER}")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def dream():
+    try:
+        return _post("/dream", {"user": USER})
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def verify():
+    try:
+        return _post("/verify", {"user": USER})
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def log(query="", limit=30):
+    try:
+        q = f"user={USER}&limit={limit}"
+        if query:
+            q += f"&q={urllib.parse.quote(query)}"
+        return _get(f"/transcript?{q}")
+    except urllib.error.URLError:
+        _die("memory server is down — run `brain.py start`")
+
+
+def start(port=9876):
+    """Start the server in background."""
+    import subprocess, time
+    try:
+        _get("/health")
+        return "already running"
+    except Exception:
+        pass
+    script = os.path.expanduser("~/.elo-memory/memory_server.py")
+    if not os.path.exists(script):
+        return "memory_server.py not found"
+    logf = open(os.path.expanduser("~/.elo-memory/server.log"), "w")
+    proc = subprocess.Popen([sys.executable, script, "--port", str(port), "--user", USER], stdout=logf, stderr=logf)
+    for _ in range(30):
+        time.sleep(0.5)
+        try:
+            if _get("/health").get("ok"):
+                pid_file = os.path.expanduser("~/.elo-memory/server.pid")
+                with open(pid_file, "w") as f:
+                    f.write(str(proc.pid))
+                return f"started (pid {proc.pid})"
+        except Exception:
+            continue
+    return "failed to start — check server.log"
+
+
+def stop():
+    import subprocess
+    pid_file = os.path.expanduser("~/.elo-memory/server.pid")
+    if os.path.exists(pid_file):
+        with open(pid_file) as f:
+            pid = int(f.read())
+        try:
+            os.kill(pid, 9)
+        except ProcessLookupError:
+            pass
+        os.remove(pid_file)
+        return "stopped"
+    result = subprocess.run(["lsof", "-ti:9876"], capture_output=True, text=True)
+    if result.stdout.strip():
+        for pid in result.stdout.strip().split("\n"):
+            os.kill(int(pid), 9)
+        return "stopped"
+    return "not running"
+
+
+def status():
+    try:
+        up = _get("/health").get("uptime", 0)
+        return f"up {int(up//60)}m {int(up%60)}s"
+    except Exception:
+        return "down"
+
+
+# ── Dispatch ──────────────────────────────────────────────────────
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    rest = sys.argv[2:]
+
+    dispatch = {
+        "store":    lambda: store(" ".join(rest)),
+        "recall":   lambda: recall(rest[0], int(rest[1]) if len(rest) > 1 else 7),
+        "think":    lambda: _dispatch_think(rest),
+        "extract":  lambda: extract(" ".join(rest)),
+        "update":   lambda: _dispatch_update(rest),
+        "forget":   lambda: forget(" ".join(rest)),
+        "briefing": lambda: briefing(),
+        "new":      lambda: new(),
+        "facts":    lambda: facts(),
+        "stats":    lambda: stats(),
+        "dream":    lambda: dream(),
+        "verify":   lambda: verify(),
+        "log":      lambda: log(" ".join(rest) if rest else ""),
+        "start":    lambda: _dispatch_start(rest),
+        "stop":     lambda: stop(),
+        "status":   lambda: status(),
+    }
+
+    fn = dispatch.get(cmd)
+    if not fn:
+        sys.exit(1)
+
+    result = fn()
+
+    if isinstance(result, str):
+        print(result)
+    else:
+        print(json.dumps(result, default=str))
+
+
+def _dispatch_think(args):
+    """Parse: think "message" [k] [--response "text"]"""
+    message_parts = []
+    k = 7
+    response = ""
+    i = 0
+    while i < len(args):
+        if args[i] == "--response" and i + 1 < len(args):
+            response = args[i + 1]
+            i += 2
+        else:
+            try:
+                k = int(args[i])
+                i += 1
+            except ValueError:
+                message_parts.append(args[i])
+                i += 1
+    message = " ".join(message_parts)
+    if not message:
+        _die("think requires a message")
+    return think(message, k, response)
+
+
+def _dispatch_update(args):
+    old = new = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--old" and i + 1 < len(args):
+            old = args[i + 1]
+            i += 2
+        elif args[i] == "--new" and i + 1 < len(args):
+            new = args[i + 1]
+            i += 2
+        else:
+            i += 1
+    if not old or not new:
+        _die("update requires --old and --new")
+    return update(old, new)
+
+
+def _dispatch_start(args):
+    port = 9876
+    i = 0
+    while i < len(args):
+        if args[i] == "--port" and i + 1 < len(args):
+            port = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
+    return start(port)
+
+
+if __name__ == "__main__":
+    main()

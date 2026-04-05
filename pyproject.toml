@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "elo-memory"
-version = "0.2.3"
-description = "Bio-inspired episodic memory system for AI agents"
+version = "0.3.0"
+description = "Bio-inspired episodic memory system for AI agents — with persistent brain CLI"
 readme = "README.md"
 license = {text = "BSL-1.1"}
 requires-python = ">=3.10"
@@ -73,13 +73,14 @@ Repository = "https://github.com/server-elo/elo-memory.git"
 
 [project.scripts]
 elo-memory = "elo_memory.cli:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
+brain = "elo_memory.brain:main"
 
 [tool.setuptools.package-data]
 elo_memory = ["py.typed"]
 "*" = ["py.typed"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.black]
 line-length = 100
