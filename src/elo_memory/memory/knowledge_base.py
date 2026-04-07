@@ -147,9 +147,15 @@ class KnowledgeBase:
         self._history: List[Dict] = []
         self._persistence_path = persistence_path
         self._lock = threading.Lock()
-        self._category_words = category_words if category_words is not None else _DEFAULT_CATEGORY_WORDS
-        self._value_to_category = value_to_category if value_to_category is not None else _DEFAULT_VALUE_TO_CATEGORY
-        self._compliance_keywords = compliance_keywords if compliance_keywords is not None else _DEFAULT_COMPLIANCE_KEYWORDS
+        self._category_words = (
+            category_words if category_words is not None else _DEFAULT_CATEGORY_WORDS
+        )
+        self._value_to_category = (
+            value_to_category if value_to_category is not None else _DEFAULT_VALUE_TO_CATEGORY
+        )
+        self._compliance_keywords = (
+            compliance_keywords if compliance_keywords is not None else _DEFAULT_COMPLIANCE_KEYWORDS
+        )
         if persistence_path:
             self._load()
 
@@ -311,21 +317,39 @@ class KnowledgeBase:
             return facts  # transition is authoritative for the sentence
 
         # --- Pattern 3: "We use/using X for Y" ---
+        # Only accept if Y is a known category word, not garbage like "most things"
         use_match = re.match(
             r"(?:we(?:'re)?|i(?:'m)?|they|our team)\s+(?:use|uses|using|run|runs|running)\s+(.+?)\s+(?:for|as|between)\s+([^,]+)",
             s,
             re.IGNORECASE,
         )
         if use_match:
-            value, key = use_match.group(1).strip(), use_match.group(2).strip()
-            # Also check for "X and Y for Z" → extract Y separately with label from Z
-            parts = re.split(r"\s+and\s+", value)
-            if len(parts) == 1:
-                facts[key.lower()] = value
-            else:
-                facts[key.lower()] = value
-                # "gRPC between services and PostgreSQL for the database"
-                # Labeled parts are handled by _extract_comma_list above
+            value, key = use_match.group(1).strip(), use_match.group(2).strip().lower()
+            # Only accept if the key is a known category or a short concrete noun
+            if (
+                key in self._category_words
+                or key in self._value_to_category.values()
+                or (
+                    len(key.split()) <= 2
+                    and not any(
+                        w in key
+                        for w in (
+                            "things",
+                            "stuff",
+                            "everything",
+                            "anything",
+                            "nothing",
+                            "most",
+                            "all",
+                            "some",
+                            "other",
+                            "these",
+                            "those",
+                        )
+                    )
+                )
+            ):
+                facts[key] = value
 
         # --- Pattern 3a2: Aspirational/preference: "should switch to X" / "considering X" ---
         pref_match = re.search(
@@ -369,17 +393,51 @@ class KnowledgeBase:
         facts.update(identity_facts)
 
         # --- Patterns 1 & 2: "My/Our/The X is Y" ---
+        # Only accept when key is a short noun phrase and value is a concrete fact,
+        # not a verb phrase like "struggling with..." or "working on..."
         is_match = re.match(
-            r"(?:my|our|the|his|her|their|its)\s+(.+?)\s+is\s+(.+)",
+            r"(?:my|our|the|his|her|their|its)\s+(\S+(?:\s+\S+)?)\s+is\s+(.+)",
             s,
             re.IGNORECASE,
         )
         if is_match:
-            key, value = is_match.group(1).strip().lower(), is_match.group(2).strip()
-            facts[key] = value
+            key = is_match.group(1).strip().lower()
+            value = is_match.group(2).strip()
+            # Reject keys that are too generic or too long
+            if len(key) <= 20 and key not in (
+                "model",
+                "reason",
+                "result",
+                "problem",
+                "issue",
+                "fact",
+                "thing",
+                "point",
+                "answer",
+                "question",
+                "way",
+                "time",
+            ):
+                # Reject values that start with verb+ing (not a fact, a description)
+                if not re.match(
+                    r"(?:struggling|working|trying|running|going|coming|doing)\s", value, re.I
+                ):
+                    # Reject values that are full clauses with multiple verbs
+                    if (
+                        len(
+                            re.findall(
+                                r"\b(is|are|was|were|has|have|had|will|can|could|should)\b",
+                                value,
+                                re.I,
+                            )
+                        )
+                        <= 1
+                    ):
+                        facts[key] = value
 
         # --- Pattern 6b: "X is Y" (generic, no possessive required) ---
-        # "P99 latency is 450ms", "DAU is 45k", "Error rate is 3.2%"
+        # Only accept concrete metric-style facts: "P99 latency is 450ms",
+        # "DAU is 45k", "Error rate is 3.2%".  NOT prose descriptions.
         generic_is = re.match(
             r"(\S+(?:\s+\S+)?)\s+is\s+(\d[\d,.]*\s*[%kKmMbBms]*\S*)", s, re.IGNORECASE
         )
@@ -388,6 +446,21 @@ class KnowledgeBase:
             val = generic_is.group(2).strip()
             if len(key) < 30 and len(val) < 50:
                 facts[key] = val
+
+        # --- Pattern 6b2: "X is Y" with short adjective/noun value ---
+        # "The weather is nice", "My editor is fast" → accept if value is short (≤3 words)
+        # and doesn't look like a clause.
+        if not any(k in facts for k in ("model", "reason", "result", "problem", "issue")):
+            generic_is2 = re.match(
+                r"(?:the|my|our|a|an)\s+(\S+(?:\s+\S+)?)\s+is\s+([a-z]\S+(?:\s+\S+){0,2})\s*[,.]?\s*$",
+                s,
+                re.IGNORECASE,
+            )
+            if generic_is2 and generic_is2.group(1).lower() not in facts:
+                key2 = generic_is2.group(1).strip().lower()
+                val2 = generic_is2.group(2).strip().rstrip(".,;:!?")
+                if len(key2) <= 20 and len(val2.split()) <= 3:
+                    facts[key2] = val2
 
         # --- Pattern 6c: Corrections: "Actually X is Y" / "X is actually Y" ---
         correction = re.search(
@@ -469,53 +542,107 @@ class KnowledgeBase:
         new_val = m.group(2).strip()
         context = m.group(3).strip() if m.group(3) else ""
 
-        # Determine the key from explicit context or category words in sentence
+        # Determine the key — order of priority:
+        # 1. Existing KB key matching old/new value (most precise — user already categorized it)
+        # 2. Known value → category mapping
+        # 3. Category words in sentence
+        # 4. Inferred category from value
+        # 5. NEVER use raw context text as key
         key = None
-        s_lower = sentence.lower()
 
-        # Check context phrase first
-        if context:
-            for cat in self._category_words:
-                if cat in context.lower():
-                    key = cat
-                    break
+        new_lower = new_val.lower()
+        old_lower = old_val.lower()
 
-        # Check sentence body for category words (excluding the old/new values)
+        # First: check if old_val matches an existing KB key's value
+        existing_key = self._find_key_for_value(old_val)
+        if existing_key:
+            key = existing_key
+
+        # Second: check known value→category mapping
         if not key:
-            for cat in self._category_words:
-                if cat in s_lower:
-                    key = cat
-                    break
-
-        # Try to match old value to an existing KB key first (most precise)
-        if not key:
-            key = self._find_key_for_value(old_val)
-
-        # Then try well-known value→category mapping
-        if not key:
-            new_lower = new_val.lower()
             for tech_val, tech_cat in self._value_to_category.items():
-                if tech_val in new_lower:
+                if tech_val in new_lower or tech_val in old_lower:
                     key = tech_cat
                     break
 
+        # Third: check category words in the sentence (but not in the context clause)
         if not key:
-            old_lower = old_val.lower()
-            for tech_val, tech_cat in self._value_to_category.items():
-                if tech_val in old_lower:
-                    key = tech_cat
+            main_clause = sentence.split(" because ")[0].split(" since ")[0].split(" due to ")[0]
+            main_lower = main_clause.lower()
+            for cat in self._category_words:
+                if cat in main_lower and cat not in new_lower and cat not in old_lower:
+                    key = cat
                     break
 
-        # Fall back to context as key
-        if not key and context:
-            key = context.lower()
+        # Fourth: infer category from value
+        if not key:
+            inferred = self._infer_category_from_value(new_val)
+            if inferred:
+                key = inferred
 
         if key:
-            # Strip trailing category word from new_val if it leaked in
-            # e.g., "to FastAPI for backend" -> context captures "backend",
-            # but "to Django for backend" with greedy match may include extra
             facts[key] = new_val
+        # If we can't determine a category, skip — better than storing garbage
+
         return facts
+
+    def _infer_category_from_value(self, value: str) -> Optional[str]:
+        """Infer a human-readable category from a known tech value."""
+        val_lower = value.lower()
+        # Common product → category inference beyond _value_to_category
+        inferences = {
+            # Editors / IDEs
+            (
+                "vs code",
+                "visual studio code",
+                "cursor",
+                "vim",
+                "neovim",
+                "sublime",
+                "emacs",
+                "intellij",
+                "pycharm",
+                "webstorm",
+            ): "editor",
+            # Languages
+            (
+                "python",
+                "javascript",
+                "typescript",
+                "go",
+                "golang",
+                "rust",
+                "java",
+                "ruby",
+                "swift",
+                "kotlin",
+                "scala",
+                "c++",
+                "c#",
+                "php",
+            ): "language",
+            # Frameworks
+            (
+                "react",
+                "vue",
+                "angular",
+                "svelte",
+                "next.js",
+                "nuxt",
+                "django",
+                "fastapi",
+                "flask",
+                "express",
+                "rails",
+                "spring",
+                "laravel",
+            ): "framework",
+        }
+        for products, category in inferences.items():
+            for product in products:
+                if product in val_lower:
+                    return category
+        return None
 
     def _find_key_for_value(self, value: str) -> Optional[str]:
         """Find an existing KB key whose current value matches `value`."""

@@ -240,7 +240,7 @@ _IMPLICIT_OLD_VALUES: Dict[str, List[str]] = {
     "quit": ["employed", "working at"],
     "fired": ["employed", "working at"],
     "relocated": [],  # Location transitions handled by explicit pattern
-    "moved": [],      # Same
+    "moved": [],  # Same
     "transferred": [],  # Same
 }
 
@@ -351,6 +351,7 @@ class UserMemory:
         if self._embedder is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
             except ImportError:
                 logger.warning(

@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Modality:
     """A single modality embedding attached to an episode."""
-    name: str              # "text", "image", "audio", "spatial"
+
+    name: str  # "text", "image", "audio", "spatial"
     embedding: np.ndarray
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -43,6 +44,7 @@ class Modality:
 @dataclass
 class SpatialCoord:
     """2D/3D spatial coordinate for location mapping."""
+
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -54,6 +56,7 @@ class Experience:
     """
     A temporally coherent sequence of episodes — one "lived experience."
     """
+
     experience_id: str
     episode_ids: List[str]
     start_time: datetime
@@ -73,11 +76,11 @@ class Experience:
             "end_time": self.end_time.isoformat(),
             "compressed_embedding": (
                 self.compressed_embedding.tolist()
-                if self.compressed_embedding is not None else None
+                if self.compressed_embedding is not None
+                else None
             ),
             "spatial_trajectory": [
-                {"x": s.x, "y": s.y, "z": s.z, "label": s.label}
-                for s in self.spatial_trajectory
+                {"x": s.x, "y": s.y, "z": s.z, "label": s.label} for s in self.spatial_trajectory
             ],
             "metadata": self.metadata,
         }
@@ -90,12 +93,9 @@ class Experience:
             start_time=datetime.fromisoformat(data["start_time"]),
             end_time=datetime.fromisoformat(data["end_time"]),
             compressed_embedding=(
-                np.array(data["compressed_embedding"])
-                if data.get("compressed_embedding") else None
+                np.array(data["compressed_embedding"]) if data.get("compressed_embedding") else None
             ),
-            spatial_trajectory=[
-                SpatialCoord(**s) for s in data.get("spatial_trajectory", [])
-            ],
+            spatial_trajectory=[SpatialCoord(**s) for s in data.get("spatial_trajectory", [])],
             metadata=data.get("metadata", {}),
         )
 
@@ -103,11 +103,12 @@ class Experience:
 @dataclass
 class WorldSimConfig:
     """Configuration for the world simulator."""
-    temporal_gap_threshold_minutes: float = 60.0   # Max gap between episodes in one experience
-    min_experience_episodes: int = 2               # Min episodes to form an experience
-    compression_dim: int = 64                      # Compressed embedding dimension
-    spatial_grid_resolution: float = 1.0           # Grid cell size for spatial maps
-    max_replay_steps: int = 100                    # Safety cap on replay length
+
+    temporal_gap_threshold_minutes: float = 60.0  # Max gap between episodes in one experience
+    min_experience_episodes: int = 2  # Min episodes to form an experience
+    compression_dim: int = 64  # Compressed embedding dimension
+    spatial_grid_resolution: float = 1.0  # Grid cell size for spatial maps
+    max_replay_steps: int = 100  # Safety cap on replay length
 
 
 class WorldSimulator:
@@ -177,9 +178,9 @@ class WorldSimulator:
                     k = min(self.config.compression_dim, len(S))
                     compressed = (U[:, :k] * S[:k]).mean(axis=0)
                 except np.linalg.LinAlgError:
-                    compressed = stacked.mean(axis=0)[:self.config.compression_dim]
+                    compressed = stacked.mean(axis=0)[: self.config.compression_dim]
             else:
-                compressed = stacked.mean(axis=0)[:self.config.compression_dim]
+                compressed = stacked.mean(axis=0)[: self.config.compression_dim]
 
         # Build spatial trajectory
         trajectory = []
@@ -223,7 +224,7 @@ class WorldSimulator:
         running_entities: set = set()
         prev_time: Optional[datetime] = None
 
-        for i, eid in enumerate(exp.episode_ids[:self.config.max_replay_steps]):
+        for i, eid in enumerate(exp.episode_ids[: self.config.max_replay_steps]):
             ep = self.store._get_episode_by_id(eid)
             if ep is None:
                 continue
@@ -246,18 +247,20 @@ class WorldSimulator:
             else:
                 text = str(content)
 
-            steps.append({
-                "step": i,
-                "episode_id": eid,
-                "timestamp": ep.timestamp.isoformat(),
-                "delta_seconds": delta_seconds,
-                "location": ep.location,
-                "text": text,
-                "entities": ep.entities,
-                "surprise": ep.surprise,
-                "running_entities": list(running_entities),
-                "progress": (i + 1) / len(exp.episode_ids),
-            })
+            steps.append(
+                {
+                    "step": i,
+                    "episode_id": eid,
+                    "timestamp": ep.timestamp.isoformat(),
+                    "delta_seconds": delta_seconds,
+                    "location": ep.location,
+                    "text": text,
+                    "entities": ep.entities,
+                    "surprise": ep.surprise,
+                    "running_entities": list(running_entities),
+                    "progress": (i + 1) / len(exp.episode_ids),
+                }
+            )
 
         return steps
 
@@ -397,7 +400,7 @@ class WorldSimulator:
             return None
 
         stacked = np.vstack(embeddings)
-        compressed = stacked.mean(axis=0)[:self.config.compression_dim]
+        compressed = stacked.mean(axis=0)[: self.config.compression_dim]
         norm = np.linalg.norm(compressed)
         exp.compressed_embedding = compressed / norm if norm > 0 else compressed
         return exp.compressed_embedding
@@ -416,8 +419,7 @@ class WorldSimulator:
             "total_locations": len(self._spatial_map),
             "multimodal_episodes": len(self._multimodal),
             "avg_experience_length": (
-                np.mean([len(e.episode_ids) for e in self.experiences])
-                if self.experiences else 0
+                np.mean([len(e.episode_ids) for e in self.experiences]) if self.experiences else 0
             ),
         }
 
@@ -440,12 +442,9 @@ class WorldSimulator:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-            self.experiences = [
-                Experience.from_dict(e) for e in data.get("experiences", [])
-            ]
+            self.experiences = [Experience.from_dict(e) for e in data.get("experiences", [])]
             self._spatial_map = {
-                loc: SpatialCoord(**coords)
-                for loc, coords in data.get("spatial_map", {}).items()
+                loc: SpatialCoord(**coords) for loc, coords in data.get("spatial_map", {}).items()
             }
         except Exception as e:
             logger.error("Failed to load world simulator state: %s", e)

@@ -51,18 +51,53 @@ def get_brain(user_id: str) -> EloBrain:
                     brain._auditor.add_to_chain(ep)
 
             _user_brains[user_id] = brain
-            log.info("Brain loaded for user '%s' (%d episodes, %d chained)",
-                     user_id, len(brain._memory._store.episodes), len(brain._auditor._chain))
+            log.info(
+                "Brain loaded for user '%s' (%d episodes, %d chained)",
+                user_id,
+                len(brain._memory._store.episodes),
+                len(brain._auditor._chain),
+            )
         return _user_brains[user_id]
 
 
 # ── Sentence splitting ───────────────────────────────────────────
 
 _ABBREV = {
-    "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr", "vs", "etc", "Inc",
-    "Ltd", "Corp", "Co", "e.g", "i.e", "St", "Mt", "Ave", "Blvd",
-    "Dept", "No", "Vol", "Jan", "Feb", "Mar", "Apr", "Jun", "Jul",
-    "Aug", "Sep", "Oct", "Nov", "Dec", "U.S", "U.K",
+    "Mr",
+    "Mrs",
+    "Ms",
+    "Dr",
+    "Prof",
+    "Sr",
+    "Jr",
+    "vs",
+    "etc",
+    "Inc",
+    "Ltd",
+    "Corp",
+    "Co",
+    "e.g",
+    "i.e",
+    "St",
+    "Mt",
+    "Ave",
+    "Blvd",
+    "Dept",
+    "No",
+    "Vol",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+    "U.S",
+    "U.K",
 }
 
 
@@ -111,6 +146,7 @@ def split_sentences(text: str) -> List[str]:
 
 # ── Transcript log ───────────────────────────────────────────────
 
+
 class TranscriptLog:
     def __init__(self, path: str):
         self._path = path
@@ -154,7 +190,8 @@ class TranscriptLog:
         if query:
             q_lower = query.lower()
             results = [
-                e for e in results
+                e
+                for e in results
                 if q_lower in e.get("message", "").lower()
                 or q_lower in e.get("response", "").lower()
             ]
@@ -163,7 +200,9 @@ class TranscriptLog:
         return list(reversed(results[-limit:]))
 
     def today(self, user_id: str = "") -> List[Dict]:
-        entries = [e for e in self._entries if e.get("user") == user_id] if user_id else self._entries
+        entries = (
+            [e for e in self._entries if e.get("user") == user_id] if user_id else self._entries
+        )
         return list(reversed(entries[-20:]))
 
 
@@ -171,6 +210,7 @@ _transcripts = TranscriptLog(os.path.join(MEMORY_ROOT, "transcripts"))
 
 
 # ── HTTP Handler ─────────────────────────────────────────────────
+
 
 class MemoryHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -238,11 +278,13 @@ class MemoryHandler(BaseHTTPRequestHandler):
                     lines = []
                     lines.append(f"Briefing: {user_id}")
                     lines.append(f"{'─' * 40}")
-                    lines.append(f"{data['total_episodes']} memories · {data['active_memories']} active · {data['superseded']} superseded")
+                    lines.append(
+                        f"{data['total_episodes']} memories · {data['active_memories']} active · {data['superseded']} superseded"
+                    )
                     lines.append(f"Topics: {', '.join(data['topics'])}")
 
                     # Entities
-                    ents = data['entities']
+                    ents = data["entities"]
                     if ents:
                         parts = []
                         for cat, vals in sorted(ents.items()):
@@ -256,10 +298,10 @@ class MemoryHandler(BaseHTTPRequestHandler):
                         lines.append(f"KB: {' | '.join(f'{k}={v}' for k, v in sorted(kb.items()))}")
 
                     # Causal
-                    causal = data.get('causal_stats', {})
-                    if causal.get('edges', 0) > 0:
+                    causal = data.get("causal_stats", {})
+                    if causal.get("edges", 0) > 0:
                         lines.append(f"Causal: {causal['edges']} links")
-                        for link in causal.get('strongest_links', [])[:3]:
+                        for link in causal.get("strongest_links", [])[:3]:
                             lines.append(f"  {link['cause']} → {link['effect']}")
 
                     # Recent facts (top 10)
@@ -268,7 +310,7 @@ class MemoryHandler(BaseHTTPRequestHandler):
                         for text, score in sorted(facts, key=lambda x: x[1], reverse=True)[:10]:
                             lines.append(f"  · {text[:120]}")
 
-                    data['summary'] = '\n'.join(lines)
+                    data["summary"] = "\n".join(lines)
 
                 self._json_response(200, data)
 
@@ -278,34 +320,46 @@ class MemoryHandler(BaseHTTPRequestHandler):
                 k = int(params.get("k", [7])[0])
                 brain = get_brain(user_id)
                 results = brain._memory.recall(query, k=k)
-                self._json_response(200, {
-                    "query": query,
-                    "results": [{"text": t, "score": s} for t, s in results],
-                    "count": len(results),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "query": query,
+                        "results": [{"text": t, "score": s} for t, s in results],
+                        "count": len(results),
+                    },
+                )
 
             elif path == "/facts":
                 user_id = params.get("user", ["default"])[0]
                 brain = get_brain(user_id)
                 facts = brain._memory.get_facts()
-                self._json_response(200, {
-                    "facts": [{"text": t, "importance": s} for t, s in sorted(facts, key=lambda x: x[1], reverse=True)],
-                    "count": len(facts),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "facts": [
+                            {"text": t, "importance": s}
+                            for t, s in sorted(facts, key=lambda x: x[1], reverse=True)
+                        ],
+                        "count": len(facts),
+                    },
+                )
 
             elif path == "/stats":
                 user_id = params.get("user", ["default"])[0]
                 brain = get_brain(user_id)
                 profile = brain._memory.get_profile()
-                self._json_response(200, {
-                    "user": user_id,
-                    "episodes": profile.get("total_memories", 0),
-                    "superseded": len(brain._memory._superseded),
-                    "sessions": profile.get("sessions_count", 1),
-                    "causal_graph": brain._causal.get_statistics(),
-                    "audit_chain": brain._auditor.get_statistics(),
-                    "governor": brain._governor.get_policy_summary(),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "user": user_id,
+                        "episodes": profile.get("total_memories", 0),
+                        "superseded": len(brain._memory._superseded),
+                        "sessions": profile.get("sessions_count", 1),
+                        "causal_graph": brain._causal.get_statistics(),
+                        "audit_chain": brain._auditor.get_statistics(),
+                        "governor": brain._governor.get_policy_summary(),
+                    },
+                )
 
             elif path == "/new":
                 """What changed since last session?"""
@@ -313,24 +367,24 @@ class MemoryHandler(BaseHTTPRequestHandler):
                 brain = get_brain(user_id)
                 # Get conversations from today that have "store" action (new memories)
                 today_convos = _transcripts.today(user_id)
-                new_stores = [
-                    e for e in today_convos
-                    if e.get("meta", {}).get("action") == "store"
-                ]
+                new_stores = [e for e in today_convos if e.get("meta", {}).get("action") == "store"]
                 # Get the last session end time from metadata
                 last_seen = brain._memory._last_seen
                 brain._memory.save()
 
-                self._json_response(200, {
-                    "new_memories": len(new_stores),
-                    "new_items": [
-                        {"message": e.get("message", ""), "ts": e.get("ts", "")}
-                        for e in new_stores[-10:]
-                    ],
-                    "last_seen": last_seen,
-                    "total_active": len(brain._memory.get_facts()),
-                    "superseded_since_last": len(brain._memory._superseded),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "new_memories": len(new_stores),
+                        "new_items": [
+                            {"message": e.get("message", ""), "ts": e.get("ts", "")}
+                            for e in new_stores[-10:]
+                        ],
+                        "last_seen": last_seen,
+                        "total_active": len(brain._memory.get_facts()),
+                        "superseded_since_last": len(brain._memory._superseded),
+                    },
+                )
 
             elif path == "/transcript":
                 user_id = params.get("user", ["default"])[0]
@@ -342,10 +396,13 @@ class MemoryHandler(BaseHTTPRequestHandler):
             elif path == "/causal":
                 user_id = params.get("user", ["default"])[0]
                 brain = get_brain(user_id)
-                self._json_response(200, {
-                    "graph": brain._causal.get_statistics(),
-                    "contradictions": brain._causal.get_contradictions(),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "graph": brain._causal.get_statistics(),
+                        "contradictions": brain._causal.get_contradictions(),
+                    },
+                )
 
             else:
                 self._json_response(404, {"error": "not found"})
@@ -408,18 +465,25 @@ class MemoryHandler(BaseHTTPRequestHandler):
                         brain._auditor.add_to_chain(ep)
 
                 brain._memory.save()
-                _transcripts.append(user_id, text, metadata={
-                    "action": "store",
-                    "sentences": stored_count,
-                    "topics": list(set(all_topics)),
-                })
+                _transcripts.append(
+                    user_id,
+                    text,
+                    metadata={
+                        "action": "store",
+                        "sentences": stored_count,
+                        "topics": list(set(all_topics)),
+                    },
+                )
 
-                self._json_response(200, {
-                    "stored": stored_count > 0,
-                    "sentences": stored_count,
-                    "entities": list(set(entities)),
-                    "topics": list(set(all_topics)),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "stored": stored_count > 0,
+                        "sentences": stored_count,
+                        "entities": list(set(entities)),
+                        "topics": list(set(all_topics)),
+                    },
+                )
 
             elif path == "/think":
                 user_message = body.get("message", "")
@@ -441,7 +505,8 @@ class MemoryHandler(BaseHTTPRequestHandler):
                 brain._memory.save()
 
                 _transcripts.append(
-                    user_id, user_message,
+                    user_id,
+                    user_message,
                     response=body.get("response", ""),
                     metadata={
                         "memories_used": context.get("memories_used", 0),
@@ -450,15 +515,18 @@ class MemoryHandler(BaseHTTPRequestHandler):
                     },
                 )
 
-                self._json_response(200, {
-                    "stored": True,
-                    "context": {
-                        "memories_retrieved": context.get("memories_used", 0) or 0,
-                        "knowledge_base_size": len(context.get("system", "")),
-                        "suggestions": context.get("suggestions", []),
-                        "knowledge_gaps": context.get("knowledge_gaps", []),
+                self._json_response(
+                    200,
+                    {
+                        "stored": True,
+                        "context": {
+                            "memories_retrieved": context.get("memories_used", 0) or 0,
+                            "knowledge_base_size": len(context.get("system", "")),
+                            "suggestions": context.get("suggestions", []),
+                            "knowledge_gaps": context.get("knowledge_gaps", []),
+                        },
                     },
-                })
+                )
 
             elif path == "/extract":
                 text = body.get("text", "")
@@ -488,12 +556,15 @@ class MemoryHandler(BaseHTTPRequestHandler):
                                 brain._intelligence.extract_causal_links(sentence, eid)
 
                 brain._memory.save()
-                self._json_response(200, {
-                    "stored": stored_count > 0,
-                    "sentences": stored_count,
-                    "entities": list(set(entities)),
-                    "knowledge_base": brain._kb.get_all(),
-                })
+                self._json_response(
+                    200,
+                    {
+                        "stored": stored_count > 0,
+                        "sentences": stored_count,
+                        "entities": list(set(entities)),
+                        "knowledge_base": brain._kb.get_all(),
+                    },
+                )
 
             elif path == "/update":
                 old_text = body.get("old", "")
@@ -534,14 +605,17 @@ class MemoryHandler(BaseHTTPRequestHandler):
                 brain = get_brain(user_id)
                 result = brain.dream()
                 brain._memory.save()
-                self._json_response(200, {
-                    "episodes_replayed": result.episodes_replayed,
-                    "synthetic_generated": result.synthetic_generated,
-                    "principles_extracted": result.principles_extracted,
-                    "skills_learned": result.skills_learned,
-                    "episodes_pruned": result.episodes_pruned,
-                    "duration_seconds": result.duration_seconds,
-                })
+                self._json_response(
+                    200,
+                    {
+                        "episodes_replayed": result.episodes_replayed,
+                        "synthetic_generated": result.synthetic_generated,
+                        "principles_extracted": result.principles_extracted,
+                        "skills_learned": result.skills_learned,
+                        "episodes_pruned": result.episodes_pruned,
+                        "duration_seconds": result.duration_seconds,
+                    },
+                )
 
             elif path == "/verify":
                 brain = get_brain(user_id)
@@ -556,6 +630,7 @@ class MemoryHandler(BaseHTTPRequestHandler):
 
 
 # ── Main ─────────────────────────────────────────────────────────
+
 
 def _shutdown():
     """Save all brains and exit cleanly."""

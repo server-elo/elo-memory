@@ -40,12 +40,13 @@ class MemoryModule:
     Contains a noised embedding (never the raw content), category tags,
     and provenance metadata.
     """
+
     module_id: str
-    embedding: np.ndarray           # Differentially private
-    category: str = ""              # Topic/domain category
-    utility_score: float = 0.0      # How useful this has been to others
-    adoption_count: int = 0         # How many agents adopted this
-    source_agent_hash: str = ""     # Anonymous source identifier
+    embedding: np.ndarray  # Differentially private
+    category: str = ""  # Topic/domain category
+    utility_score: float = 0.0  # How useful this has been to others
+    adoption_count: int = 0  # How many agents adopted this
+    source_agent_hash: str = ""  # Anonymous source identifier
     created_at: str = ""
     revoked: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -111,7 +112,8 @@ class MemoryPool:
     ) -> List[MemoryModule]:
         """Find the k most relevant modules by embedding similarity."""
         candidates = [
-            m for m in self.modules.values()
+            m
+            for m in self.modules.values()
             if not m.revoked and (category is None or m.category == category)
         ]
         if not candidates:

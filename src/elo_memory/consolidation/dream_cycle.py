@@ -36,22 +36,23 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DreamConfig:
     """Configuration for dream consolidation."""
+
     # Replay
-    replay_fraction: float = 0.3        # Fraction of episodes to replay per cycle
+    replay_fraction: float = 0.3  # Fraction of episodes to replay per cycle
     replay_priority_alpha: float = 0.7  # Importance weighting for replay selection
 
     # Synthetic augmentation
-    augmentation_noise_scale: float = 0.05   # Noise for synthetic episode generation
-    augmentations_per_episode: int = 2       # Synthetic variants per replayed episode
-    interpolation_count: int = 3             # Cross-episode interpolations
+    augmentation_noise_scale: float = 0.05  # Noise for synthetic episode generation
+    augmentations_per_episode: int = 2  # Synthetic variants per replayed episode
+    interpolation_count: int = 3  # Cross-episode interpolations
 
     # Abstraction
-    cluster_threshold: float = 0.7   # Cosine threshold for clustering
-    min_cluster_size: int = 3        # Min episodes to form a principle
+    cluster_threshold: float = 0.7  # Cosine threshold for clustering
+    min_cluster_size: int = 3  # Min episodes to form a principle
 
     # Pruning
-    prune_activation_threshold: float = 0.05   # Below this, mark for pruning
-    max_prune_fraction: float = 0.1            # Never prune more than 10% per cycle
+    prune_activation_threshold: float = 0.05  # Below this, mark for pruning
+    max_prune_fraction: float = 0.1  # Never prune more than 10% per cycle
 
     # Skills
     skill_repetition_threshold: int = 3  # Min times a pattern appears to become a skill
@@ -60,6 +61,7 @@ class DreamConfig:
 @dataclass
 class DreamResult:
     """Output of a single dream cycle."""
+
     episodes_replayed: int = 0
     synthetic_generated: int = 0
     principles_extracted: int = 0
@@ -120,6 +122,14 @@ class DreamConsolidation:
         synthetics = self._generate_synthetics(replay_batch, store)
         result.synthetic_generated = len(synthetics)
 
+        # Store synthetic episodes with LOW importance so they don't pollute recall.
+        # They serve as training data for evolution but shouldn't dominate retrieval.
+        for syn in synthetics:
+            syn.importance = max(0.01, syn.importance * 0.3)  # Dampen importance
+            store.episodes.append(syn)
+            if hasattr(store, "_episode_index") and store._episode_index is not None:
+                store._episode_index[syn.episode_id] = syn
+
         # ── Stage 3: Deep — Abstraction & Principles ─────────────
         principles = self._extract_principles(episodes)
         result.principles = principles
@@ -163,7 +173,7 @@ class DreamConsolidation:
         alpha = self.config.replay_priority_alpha
         priorities_list = []
         for ep in episodes:
-            p = (ep.importance ** alpha) * ((ep.surprise + 0.1) ** (1 - alpha))
+            p = (ep.importance**alpha) * ((ep.surprise + 0.1) ** (1 - alpha))
             priorities_list.append(p)
 
         priorities = np.array(priorities_list)
@@ -187,8 +197,8 @@ class DreamConsolidation:
     ) -> List[Episode]:
         """Generate synthetic variations of replayed episodes (REM-like).
 
-        Synthetic episodes are kept in-memory only and NOT stored into the
-        EpisodicMemoryStore to avoid unintended capacity offloading triggers.
+        Synthetic episodes are stored into the EpisodicMemoryStore so they
+        contribute to future retrieval and consolidation.
         """
         synthetics: List[Episode] = []
         max_synthetic = max(1, len(replay_batch) * self.config.augmentations_per_episode)
@@ -197,8 +207,8 @@ class DreamConsolidation:
             if ep.embedding is None:
                 continue
 
-            # Noisy variants — create Episode objects without storing
-            for _ in range(self.config.augmentations_per_episode):
+            # Noisy variants — create and store Episode objects
+            for i in range(self.config.augmentations_per_episode):
                 if len(synthetics) >= max_synthetic:
                     break
                 noise = np.random.randn(*ep.embedding.shape) * self.config.augmentation_noise_scale
@@ -241,7 +251,9 @@ class DreamConsolidation:
                 merged_entities = list(set(ep_a.entities + ep_b.entities))
                 synthetic_ep = Episode(
                     episode_id=f"synthetic-interp-{_uuid.uuid4().hex[:8]}",
-                    content={"text": f"[dream synthesis] {ep_a.metadata.get('text', '')} + {ep_b.metadata.get('text', '')}"},
+                    content={
+                        "text": f"[dream synthesis] {ep_a.metadata.get('text', '')} + {ep_b.metadata.get('text', '')}"
+                    },
                     embedding=interp,
                     surprise=0.0,
                     importance=0.0,
@@ -268,7 +280,9 @@ class DreamConsolidation:
             result: np.ndarray = (1 - t) * v0_norm + t * v1_norm
             return result
         so = np.sin(omega)
-        result2: np.ndarray = np.sin((1 - t) * omega) / so * v0_norm + np.sin(t * omega) / so * v1_norm
+        result2: np.ndarray = (
+            np.sin((1 - t) * omega) / so * v0_norm + np.sin(t * omega) / so * v1_norm
+        )
         return result2
 
     # ── Stage 3: Abstraction ─────────────────────────────────────
@@ -371,13 +385,15 @@ class DreamConsolidation:
         skills = []
         for (topics, entities), ep_ids in pattern_counts.items():
             if len(ep_ids) >= self.config.skill_repetition_threshold:
-                skills.append({
-                    "type": "skill",
-                    "topics": list(topics),
-                    "entities": list(entities),
-                    "repetitions": len(ep_ids),
-                    "episode_ids": ep_ids,
-                })
+                skills.append(
+                    {
+                        "type": "skill",
+                        "topics": list(topics),
+                        "entities": list(entities),
+                        "repetitions": len(ep_ids),
+                        "episode_ids": ep_ids,
+                    }
+                )
 
         return skills
 

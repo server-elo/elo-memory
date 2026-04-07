@@ -65,6 +65,7 @@ class Episode:
         """Generate episode ID if not provided."""
         if not self.episode_id:
             import uuid
+
             self.episode_id = f"ep_{self.timestamp.timestamp()}_{uuid.uuid4().hex[:12]}"
 
     def to_dict(self) -> Dict:
@@ -674,15 +675,15 @@ class EpisodicMemoryStore:
                 date_key = episode.timestamp.strftime("%Y-%m-%d")
                 if date_key in self.temporal_index:
                     self.temporal_index[date_key] = [
-                        eid for eid in self.temporal_index[date_key]
-                        if eid != episode.episode_id
+                        eid for eid in self.temporal_index[date_key] if eid != episode.episode_id
                     ]
                     if not self.temporal_index[date_key]:
                         del self.temporal_index[date_key]
                 # Clean spatial index
                 if episode.location and episode.location in self.spatial_index:
                     self.spatial_index[episode.location] = [
-                        eid for eid in self.spatial_index[episode.location]
+                        eid
+                        for eid in self.spatial_index[episode.location]
                         if eid != episode.episode_id
                     ]
                     if not self.spatial_index[episode.location]:
@@ -692,8 +693,7 @@ class EpisodicMemoryStore:
                     key = entity.lower()
                     if key in self.entity_index:
                         self.entity_index[key] = [
-                            eid for eid in self.entity_index[key]
-                            if eid != episode.episode_id
+                            eid for eid in self.entity_index[key] if eid != episode.episode_id
                         ]
                         if not self.entity_index[key]:
                             del self.entity_index[key]
@@ -702,8 +702,9 @@ class EpisodicMemoryStore:
                     try:
                         self.collection.delete(ids=[episode.episode_id])
                     except Exception as e:
-                        logger.warning("Failed to remove episode %s from vector DB: %s",
-                                       episode.episode_id, e)
+                        logger.warning(
+                            "Failed to remove episode %s from vector DB: %s", episode.episode_id, e
+                        )
 
                 self._offload_episode(episode)
                 self.episodes_offloaded += 1

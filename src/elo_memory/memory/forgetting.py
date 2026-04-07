@@ -69,7 +69,9 @@ class ForgettingEngine:
         time_elapsed = (current_time - timestamp).total_seconds() / 3600  # hours
 
         # Apply rehearsal boost (logarithmic to prevent memory immortality)
-        boosted_activation = initial_activation * (1 + self.config.rehearsal_boost * np.log1p(rehearsal_count))
+        boosted_activation = initial_activation * (
+            1 + self.config.rehearsal_boost * np.log1p(rehearsal_count)
+        )
 
         # Apply decay
         if self.config.use_power_law:

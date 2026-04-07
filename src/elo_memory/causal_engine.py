@@ -37,21 +37,21 @@ logger = logging.getLogger(__name__)
 # ── Causal patterns ──────────────────────────────────────────────
 
 _CAUSAL_PATTERNS = [
-    # "X because Y"
+    # "X caused Y"
+    (re.compile(r"(.+?)\s+caused\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
+    # "X led to Y"
+    (re.compile(r"(.+?)\s+led\s+to\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
+    # "X resulted in Y"
+    (re.compile(r"(.+?)\s+resulted\s+in\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
+    # "X because Y" → Y is the cause, X is the effect
     (re.compile(r"(.+?)\s+because\s+(.+?)(?:\.|,|$)", re.I), "effect", "cause"),
-    # "due to X, Y"
+    # "due to X, Y" → X is cause, Y is effect
     (re.compile(r"due\s+to\s+(.+?),\s*(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
     # "X so that Y"
     (re.compile(r"(.+?)\s+so\s+that\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
     # "X in order to Y"
     (re.compile(r"(.+?)\s+in\s+order\s+to\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
-    # "X led to Y"
-    (re.compile(r"(.+?)\s+led\s+to\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
-    # "X resulted in Y"
-    (re.compile(r"(.+?)\s+resulted\s+in\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
-    # "X caused Y"
-    (re.compile(r"(.+?)\s+caused\s+(.+?)(?:\.|,|$)", re.I), "cause", "effect"),
-    # "after X, Y"
+    # "after X, Y" → X happened first, then Y (X contributes to Y)
     (re.compile(r"after\s+(.+?),\s*(.+?)(?:\.|$)", re.I), "cause", "effect"),
     # "X, therefore Y"
     (re.compile(r"(.+?),?\s+therefore\s+(.+?)(?:\.|$)", re.I), "cause", "effect"),
@@ -63,6 +63,7 @@ _CAUSAL_PATTERNS = [
 @dataclass
 class CausalLink:
     """Single causal relationship."""
+
     cause: str
     effect: str
     strength: float = 1.0
@@ -75,10 +76,11 @@ class CausalLink:
 @dataclass
 class CausalEngineConfig:
     """Configuration for the causal inference engine."""
-    decay_per_day: float = 0.02           # Strength decay per day without reinforcement
+
+    decay_per_day: float = 0.02  # Strength decay per day without reinforcement
     contradiction_threshold: float = 0.5  # Min strength for contradiction detection
-    min_link_strength: float = 0.1        # Links below this are pruned
-    max_graph_nodes: int = 5000           # Safety cap
+    min_link_strength: float = 0.1  # Links below this are pruned
+    max_graph_nodes: int = 5000  # Safety cap
 
 
 class CausalInferenceEngine:
@@ -116,22 +118,91 @@ class CausalInferenceEngine:
                 cause = parts["cause"]
                 effect = parts["effect"]
                 # Skip very short or very long extractions
-                if len(cause) < 5 or len(effect) < 5:
+                if len(cause) < 2 or len(effect) < 2:
                     continue
                 if len(cause) > 200 or len(effect) > 200:
                     continue
                 # Reject bad extractions
                 if self._is_bad_extraction(cause, effect):
                     continue
-                links.append(CausalLink(
-                    cause=cause,
-                    effect=effect,
+
+                # For "because" patterns, also extract entity-level causal links
+                # so counterfactual queries on specific entities work
+                if first_role == "effect" and second_role == "cause":
+                    # "X because Y" → extract entity-based sub-links
+                    entity_links = self._extract_entity_links(text, cause, effect, episode_id, now)
+                    links.extend(entity_links)
+
+                links.append(
+                    CausalLink(
+                        cause=cause,
+                        effect=effect,
+                        source_episodes=[episode_id] if episode_id else [],
+                        first_seen=now,
+                        last_seen=now,
+                    )
+                )
+
+        return links
+
+    def _extract_entity_links(
+        self, text: str, cause: str, effect: str, episode_id: str, now: str
+    ) -> List[CausalLink]:
+        """Extract entity-level causal sub-links for counterfactual queries.
+
+        E.g., "I switched from Vim to Neovim because I wanted better LSP support"
+        → "Vim" → "switched to Neovim" (entity-level cause→effect)
+        """
+        sub_links: List[CausalLink] = []
+
+        # Find entities in the cause clause
+        cause_entities = re.findall(r"\b([A-Z][a-zA-Z]+)\b", cause)
+        effect_entities = re.findall(r"\b([A-Z][a-zA-Z]+)\b", effect)
+
+        # "switched from X to Y" pattern → X caused "switched to Y"
+        switch_match = re.search(r"switched\s+from\s+(\S+)\s+to\s+(\S+)", effect, re.I)
+        if switch_match:
+            old_thing = switch_match.group(1)
+            new_thing = switch_match.group(2)
+            # Entity-level: old_thing → switched to new_thing
+            sub_links.append(
+                CausalLink(
+                    cause=old_thing,
+                    effect=f"switched to {new_thing}",
                     source_episodes=[episode_id] if episode_id else [],
                     first_seen=now,
                     last_seen=now,
-                ))
+                )
+            )
+            # Also: cause_reason → old_thing (wanted X caused using old_thing)
+            if cause_entities:
+                reason = cause_entities[0]
+                sub_links.append(
+                    CausalLink(
+                        cause=reason,
+                        effect=f"used {old_thing}",
+                        source_episodes=[episode_id] if episode_id else [],
+                        first_seen=now,
+                        last_seen=now,
+                    )
+                )
 
-        return links
+        # "moved from X to Y" → X → moved to Y
+        move_match = re.search(r"moved\s+from\s+(\S+)\s+to\s+(\S+)", effect, re.I)
+        if move_match:
+            old_loc = move_match.group(1)
+            new_loc = move_match.group(2)
+            sub_links.append(
+                CausalLink(
+                    cause=old_loc,
+                    effect=f"moved to {new_loc}",
+                    source_episodes=[episode_id] if episode_id else [],
+                    first_seen=now,
+                    last_seen=now,
+                )
+            )
+
+        return sub_links
 
     def _add_link(self, link: CausalLink) -> None:
         """Add or strengthen a causal link in the graph."""
@@ -174,15 +245,18 @@ class CausalInferenceEngine:
         # Cause ends with conjunction (e.g., "X and caused Y" → "X and")
         if re.search(r"\s+(and|but|or|yet|so|then)\s*$", cause, re.I):
             return True
-        # Cause is too short to be meaningful
-        if len(cause.split()) < 3:
+        # Cause is too short to be meaningful (need at least 1 word)
+        if len(cause.split()) < 1:
             return True
-        # Effect is essentially empty (just a determiner or pronoun)
-        if len(effect.split()) < 3:
+        # Effect is essentially empty
+        if len(effect.split()) < 1:
             return True
-        # Both cause and effect start with lowercase — likely a mangled split
+        # Both cause and effect start with lowercase AND neither is a known pattern
+        # (e.g., "after X, Y" naturally gives lowercase X)
         if cause[0].islower() and effect[0].islower():
-            return True
+            # Allow if cause looks like a continuation (e.g., "the migration", "a storm")
+            if not re.match(r"^(the|a|an|this|that|these|those|some)\s+", cause, re.I):
+                return True
         return False
 
     @staticmethod
@@ -210,13 +284,15 @@ class CausalInferenceEngine:
 
             for pred in self.graph.predecessors(node):
                 edge = self.graph.edges[pred, node]
-                results.append({
-                    "cause": self.graph.nodes[pred].get("label", pred),
-                    "effect": self.graph.nodes[node].get("label", node),
-                    "strength": edge["strength"],
-                    "evidence_count": edge["evidence_count"],
-                    "depth": d + 1,
-                })
+                results.append(
+                    {
+                        "cause": self.graph.nodes[pred].get("label", pred),
+                        "effect": self.graph.nodes[node].get("label", node),
+                        "strength": edge["strength"],
+                        "evidence_count": edge["evidence_count"],
+                        "depth": d + 1,
+                    }
+                )
                 queue.append((pred, d + 1))
 
         results.sort(key=lambda x: x["strength"], reverse=True)
@@ -240,13 +316,15 @@ class CausalInferenceEngine:
 
             for succ in self.graph.successors(node):
                 edge = self.graph.edges[node, succ]
-                results.append({
-                    "cause": self.graph.nodes[node].get("label", node),
-                    "effect": self.graph.nodes[succ].get("label", succ),
-                    "strength": edge["strength"],
-                    "evidence_count": edge["evidence_count"],
-                    "depth": d + 1,
-                })
+                results.append(
+                    {
+                        "cause": self.graph.nodes[node].get("label", node),
+                        "effect": self.graph.nodes[succ].get("label", succ),
+                        "strength": edge["strength"],
+                        "evidence_count": edge["evidence_count"],
+                        "depth": d + 1,
+                    }
+                )
                 queue.append((succ, d + 1))
 
         results.sort(key=lambda x: x["strength"], reverse=True)
@@ -256,14 +334,30 @@ class CausalInferenceEngine:
         """
         Answer: "What if *removed_cause* had not happened?"
 
-        Removes the node and returns all downstream effects that would
-        be lost (nodes only reachable through the removed cause).
+        Supports fuzzy matching — you can query by keyword ("Vim") and it
+        will find nodes containing that keyword.
         """
         key = self._normalize(removed_cause)
-        if key not in self.graph:
-            return {"removed": removed_cause, "lost_effects": [], "preserved_effects": []}
 
-        # Find all descendants of this node
+        # Exact match first
+        if key not in self.graph:
+            # Fuzzy: find nodes whose label or key contains the query
+            query_lower = removed_cause.lower()
+            matches = [
+                n
+                for n in self.graph.nodes()
+                if query_lower in n or query_lower in self.graph.nodes[n].get("label", "").lower()
+            ]
+            if matches:
+                # Use the longest matching node (most specific match)
+                key = max(matches, key=len)
+            else:
+                return {"removed": removed_cause, "lost_effects": [], "preserved_effects": []}
+
+        # Find direct effects (immediate successors)
+        direct_effects = [self.graph.nodes[s].get("label", s) for s in self.graph.successors(key)]
+
+        # Find all descendants
         descendants = nx.descendants(self.graph, key)
 
         # Check which descendants are ONLY reachable through this node
@@ -272,10 +366,8 @@ class CausalInferenceEngine:
         temp_graph = self.graph.copy()
         temp_graph.remove_node(key)
 
-        # Find all root nodes (nodes with no predecessors)
-        roots = [n for n in temp_graph.nodes() if temp_graph.in_degree(n) == 0]
-
         # BFS from all roots to see what's still reachable
+        roots = [n for n in temp_graph.nodes() if temp_graph.in_degree(n) == 0]
         still_reachable: Set[str] = set()
         for root in roots:
             still_reachable.update(nx.descendants(temp_graph, root))
@@ -288,11 +380,16 @@ class CausalInferenceEngine:
             else:
                 lost.append(label)
 
+        # If no downstream chains exist, report direct effects as lost
+        if not lost and direct_effects:
+            lost = direct_effects
+
         return {
-            "removed": removed_cause,
+            "removed": self.graph.nodes[key].get("label", removed_cause),
             "lost_effects": lost,
             "preserved_effects": preserved,
             "total_downstream": len(descendants),
+            "direct_effects": direct_effects,
         }
 
     # ── Contradiction Detection ──────────────────────────────────
@@ -329,11 +426,13 @@ class CausalInferenceEngine:
             cycles = list(nx.simple_cycles(self.graph))
             for cycle in cycles[:20]:  # Cap at 20
                 labels = [self.graph.nodes[n].get("label", n) for n in cycle]
-                contradictions.append({
-                    "type": "cycle",
-                    "nodes": labels,
-                    "detected_at": datetime.now(timezone.utc).isoformat(),
-                })
+                contradictions.append(
+                    {
+                        "type": "cycle",
+                        "nodes": labels,
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
         except nx.NetworkXError:
             pass
 
@@ -361,9 +460,7 @@ class CausalInferenceEngine:
 
     def _prune_weak_links(self) -> None:
         """Remove weakest links when graph is too large."""
-        edges = sorted(
-            self.graph.edges(data=True), key=lambda e: e[2]["strength"]
-        )
+        edges = sorted(self.graph.edges(data=True), key=lambda e: e[2]["strength"])
         n_remove = max(1, len(edges) // 10)
         for u, v, _ in edges[:n_remove]:
             self.graph.remove_edge(u, v)
@@ -395,14 +492,8 @@ class CausalInferenceEngine:
 
     def save(self, path: Path) -> None:
         data = {
-            "nodes": [
-                {"id": n, **self.graph.nodes[n]}
-                for n in self.graph.nodes()
-            ],
-            "edges": [
-                {"source": u, "target": v, **d}
-                for u, v, d in self.graph.edges(data=True)
-            ],
+            "nodes": [{"id": n, **self.graph.nodes[n]} for n in self.graph.nodes()],
+            "edges": [{"source": u, "target": v, **d} for u, v, d in self.graph.edges(data=True)],
             "contradictions": self._contradictions,
         }
         with open(path, "w") as f:

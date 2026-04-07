@@ -16,7 +16,7 @@ License: BSL-1.1
 
 import logging
 
-__version__ = "0.2.3"
+__version__ = "0.3.1"
 __author__ = "Lorenc Ndoj, Elvi Zekaj"
 __license__ = "BSL-1.1"
 

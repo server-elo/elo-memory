@@ -337,4 +337,3 @@ class BayesianSurpriseEngine:
         self.total_surprise = 0.0
         self.mean_surprise = 0.0
         self.std_surprise = 1.0
-

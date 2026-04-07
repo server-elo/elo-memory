@@ -35,12 +35,13 @@ logger = logging.getLogger(__name__)
 
 # ── Actions ──────────────────────────────────────────────────────
 
+
 class Action(IntEnum):
-    ENCODE = 0    # Store normally
-    SKIP = 1      # Do not store
-    PROMOTE = 2   # Store with boosted importance
-    DEMOTE = 3    # Reduce importance of existing similar memories
-    PRUNE = 4     # Mark low-value existing memories for removal
+    ENCODE = 0  # Store normally
+    SKIP = 1  # Do not store
+    PROMOTE = 2  # Store with boosted importance
+    DEMOTE = 3  # Reduce importance of existing similar memories
+    PRUNE = 4  # Mark low-value existing memories for removal
 
 
 ACTION_NAMES = {a: a.name for a in Action}
@@ -48,21 +49,23 @@ ACTION_NAMES = {a: a.name for a in Action}
 
 # ── Config ───────────────────────────────────────────────────────
 
+
 @dataclass
 class GovernorConfig:
     """Configuration for the Memory Governor."""
+
     # Context discretization bins (per feature)
-    n_surprise_bins: int = 3       # low / medium / high
-    n_similarity_bins: int = 3     # low / medium / high
-    n_importance_bins: int = 2     # low / high
+    n_surprise_bins: int = 3  # low / medium / high
+    n_similarity_bins: int = 3  # low / medium / high
+    n_importance_bins: int = 2  # low / high
 
     # Reward tracking
-    reward_window_hours: float = 24.0   # How long to wait for retrieval reward
-    reward_check_interval: int = 50     # Check pending rewards every N decisions
+    reward_window_hours: float = 24.0  # How long to wait for retrieval reward
+    reward_check_interval: int = 50  # Check pending rewards every N decisions
 
     # Thompson Sampling priors
-    prior_alpha: float = 1.0   # Beta prior α (successes)
-    prior_beta: float = 1.0    # Beta prior β (failures)
+    prior_alpha: float = 1.0  # Beta prior α (successes)
+    prior_beta: float = 1.0  # Beta prior β (failures)
 
     # Exploration
     min_exploration_rate: float = 0.05  # Minimum random exploration
@@ -77,38 +80,45 @@ class GovernorConfig:
 
 # ── Context Features ─────────────────────────────────────────────
 
+
 @dataclass
 class DecisionContext:
     """Features describing the current memory decision context."""
+
     surprise: float = 0.0
-    max_similarity: float = 0.0        # Cosine sim to nearest existing memory
+    max_similarity: float = 0.0  # Cosine sim to nearest existing memory
     importance: float = 0.5
     entity_count: int = 0
-    storage_utilization: float = 0.0   # episodes / max_episodes
-    recency_score: float = 1.0         # How recent is the last similar memory
-    topic_overlap: float = 0.0         # Fraction of topics already covered
+    storage_utilization: float = 0.0  # episodes / max_episodes
+    recency_score: float = 1.0  # How recent is the last similar memory
+    topic_overlap: float = 0.0  # Fraction of topics already covered
 
     def to_bin_key(self, config: GovernorConfig) -> Tuple[int, int, int]:
         """Discretize continuous features into bin indices."""
         s_bin = min(int(self.surprise * config.n_surprise_bins), config.n_surprise_bins - 1)
-        sim_bin = min(int(self.max_similarity * config.n_similarity_bins), config.n_similarity_bins - 1)
+        sim_bin = min(
+            int(self.max_similarity * config.n_similarity_bins), config.n_similarity_bins - 1
+        )
         imp_bin = min(int(self.importance * config.n_importance_bins), config.n_importance_bins - 1)
         return (s_bin, sim_bin, imp_bin)
 
 
 # ── Pending Decision ─────────────────────────────────────────────
 
+
 @dataclass
 class PendingDecision:
     """Tracks a decision awaiting its reward signal."""
+
     action: Action
     bin_key: Tuple[int, int, int]
     episode_id: Optional[str]
-    timestamp: float           # time.time()
-    embedding_hash: str = ""   # For tracking skipped observations
+    timestamp: float  # time.time()
+    embedding_hash: str = ""  # For tracking skipped observations
 
 
 # ── Governor ─────────────────────────────────────────────────────
+
 
 class MemoryGovernor:
     """
@@ -119,7 +129,9 @@ class MemoryGovernor:
     Rewards arrive with delay — retrieval within the reward window = success.
     """
 
-    def __init__(self, config: Optional[GovernorConfig] = None, persistence_path: Optional[str] = None):
+    def __init__(
+        self, config: Optional[GovernorConfig] = None, persistence_path: Optional[str] = None
+    ):
         self.config = config or GovernorConfig()
 
         # Beta distribution parameters per (bin_key, action)
@@ -262,13 +274,10 @@ class MemoryGovernor:
             # Success if the episode was retrieved
             return 1.0 if decision.episode_id in self._retrieved_ids else 0.0
         elif decision.action == Action.SKIP:
-            # For skipped observations, check by embedding hash since there's no episode_id.
-            # If a hash match appears in retrieved IDs, the skipped content was needed.
-            skipped_was_needed = any(
-                decision.embedding_hash and decision.embedding_hash == h
-                for h in self._retrieved_ids
-            )
-            return 0.0 if skipped_was_needed else 1.0
+            # For skipped content, we can't directly verify retrieval without
+            # episode_id. Use neutral reward (0.5) since we lack a signal.
+            # This avoids the degenerate "always skip" policy.
+            return 0.5
         elif decision.action == Action.DEMOTE:
             # Reward if still retrieved (we reduced cost without losing utility)
             return 0.8 if decision.episode_id in self._retrieved_ids else 0.5
@@ -291,7 +300,7 @@ class MemoryGovernor:
     def _update_params(self, bin_key: Tuple[int, ...], action: Action, reward: float) -> None:
         params = self._get_params(bin_key, action)
         params["alpha"] += reward
-        params["beta"] += (1.0 - reward)
+        params["beta"] += 1.0 - reward
 
     # ── Policy Inspection ────────────────────────────────────────
 
@@ -320,11 +329,13 @@ class MemoryGovernor:
                     if mean > best_mean:
                         best_mean = mean
                         best_action = a
-                summary["learned_preferences"].append({
-                    "context_bin": bin_key,
-                    "preferred_action": ACTION_NAMES[best_action],
-                    "confidence": best_mean,
-                })
+                summary["learned_preferences"].append(
+                    {
+                        "context_bin": bin_key,
+                        "preferred_action": ACTION_NAMES[best_action],
+                        "confidence": best_mean,
+                    }
+                )
 
         return summary
 

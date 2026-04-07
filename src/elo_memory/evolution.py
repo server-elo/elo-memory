@@ -37,23 +37,25 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EvolutionConfig:
     """Configuration for parametric evolution."""
-    rank: int = 16                          # Low-rank dimension
-    learning_rate: float = 0.001            # Gradient step size
-    momentum: float = 0.9                   # SGD momentum
-    ewc_lambda: float = 0.1                # EWC regularization
-    feedback_buffer_size: int = 500         # Feedback history for training
-    min_feedback_for_update: int = 20       # Min feedback samples before updating
-    rollback_threshold: float = -0.05       # Rollback if quality drops by this much
-    checkpoint_interval: int = 50           # Save checkpoint every N updates
-    max_grad_norm: float = 1.0              # Gradient clipping
+
+    rank: int = 16  # Low-rank dimension
+    learning_rate: float = 0.001  # Gradient step size
+    momentum: float = 0.9  # SGD momentum
+    ewc_lambda: float = 0.1  # EWC regularization
+    feedback_buffer_size: int = 500  # Feedback history for training
+    min_feedback_for_update: int = 20  # Min feedback samples before updating
+    rollback_threshold: float = -0.05  # Rollback if quality drops by this much
+    checkpoint_interval: int = 50  # Save checkpoint every N updates
+    max_grad_norm: float = 1.0  # Gradient clipping
 
 
 @dataclass
 class RetrievalFeedback:
     """Single retrieval feedback signal."""
+
     query_embedding: np.ndarray
     result_embedding: np.ndarray
-    relevance: float           # 1.0 = relevant, 0.0 = irrelevant
+    relevance: float  # 1.0 = relevant, 0.0 = irrelevant
     timestamp: float = 0.0
 
 
@@ -109,9 +111,8 @@ class ParametricEvolution:
 
     def adapt_embedding(self, embedding: np.ndarray) -> np.ndarray:
         """Apply learned correction to an embedding (thread-safe read)."""
-        # W = I + A @ B.T  →  W @ e = e + A @ (B.T @ e)
         with self._lock:
-            A, B = self.A, self.B
+            A, B = self.A.copy(), self.B.copy()
         correction = A @ (B.T @ embedding)
         adapted = embedding + correction
 
@@ -119,6 +120,14 @@ class ParametricEvolution:
         norm = np.linalg.norm(adapted)
         result: np.ndarray = adapted / norm if norm > 0 else adapted
         return result
+
+    @staticmethod
+    def _adapt_with(embedding: np.ndarray, A: np.ndarray, B: np.ndarray) -> np.ndarray:
+        """Apply adaptation using given A, B matrices (no locking)."""
+        correction = A @ (B.T @ embedding)
+        adapted = embedding + correction
+        norm = np.linalg.norm(adapted)
+        return adapted / norm if norm > 0 else adapted
 
     def record_feedback(
         self,
@@ -147,52 +156,58 @@ class ParametricEvolution:
         """
         with self._lock:
             feedback = list(self._feedback)
+            # Snapshot A and B for consistent gradient computation
+            A_snap = self.A.copy()
+            B_snap = self.B.copy()
 
         if len(feedback) < self.config.min_feedback_for_update:
             return {"updated": False, "reason": "insufficient_feedback"}
 
-        # Compute gradients via finite differences (no autograd needed)
-        grad_A = np.zeros_like(self.A)
-        grad_B = np.zeros_like(self.B)
+        # Compute gradients using snapshot matrices (no race conditions)
+        grad_A = np.zeros_like(A_snap)
+        grad_B = np.zeros_like(B_snap)
         total_loss = 0.0
         n = len(feedback)
 
         for fb in feedback:
-            q_adapted = self.adapt_embedding(fb.query_embedding)
-            r_adapted = self.adapt_embedding(fb.result_embedding)
+            # Adapt using snapshot matrices
+            q_adapted = self._adapt_with(fb.query_embedding, A_snap, B_snap)
+            r_adapted = self._adapt_with(fb.result_embedding, A_snap, B_snap)
 
             # Cosine similarity
             cos_sim = float(np.dot(q_adapted, r_adapted))
 
             # Loss: we want cos_sim to match relevance
-            # d(loss)/d(A) ≈ -(relevance - cos_sim) * outer products
             error = fb.relevance - cos_sim
-            total_loss += error ** 2
+            total_loss += error**2
 
-            # Approximate gradient (chain rule through normalization)
-            q_proj = self.B.T @ fb.query_embedding  # (rank,)
-            r_proj = self.B.T @ fb.result_embedding  # (rank,)
+            # Approximate gradient
+            q_proj = B_snap.T @ fb.query_embedding
+            r_proj = B_snap.T @ fb.result_embedding
 
-            # dL/dA ≈ -error * (query @ r_proj.T + result @ q_proj.T)
-            grad_A += -error * (
-                np.outer(fb.query_embedding, r_proj) +
-                np.outer(fb.result_embedding, q_proj)
-            ) / n
+            grad_A += (
+                -error
+                * (np.outer(fb.query_embedding, r_proj) + np.outer(fb.result_embedding, q_proj))
+                / n
+            )
 
-            # dL/dB ≈ -error * (A.T @ query @ result.T + ...)
-            grad_B += -error * (
-                np.outer(fb.query_embedding, self.A.T @ fb.result_embedding) +
-                np.outer(fb.result_embedding, self.A.T @ fb.query_embedding)
-            ) / n
+            grad_B += (
+                -error
+                * (
+                    np.outer(fb.query_embedding, A_snap.T @ fb.result_embedding)
+                    + np.outer(fb.result_embedding, A_snap.T @ fb.query_embedding)
+                )
+                / n
+            )
 
         # EWC penalty gradient
-        ewc_grad_A = self.config.ewc_lambda * self._fisher_A * (self.A - self._anchor_A)
-        ewc_grad_B = self.config.ewc_lambda * self._fisher_B * (self.B - self._anchor_B)
+        ewc_grad_A = self.config.ewc_lambda * self._fisher_A * (A_snap - self._anchor_A)
+        ewc_grad_B = self.config.ewc_lambda * self._fisher_B * (B_snap - self._anchor_B)
         grad_A += ewc_grad_A
         grad_B += ewc_grad_B
 
         # Gradient clipping
-        grad_norm = np.sqrt(np.sum(grad_A ** 2) + np.sum(grad_B ** 2))
+        grad_norm = np.sqrt(np.sum(grad_A**2) + np.sum(grad_B**2))
         if grad_norm > self.config.max_grad_norm:
             scale = self.config.max_grad_norm / grad_norm
             grad_A *= scale
@@ -200,14 +215,27 @@ class ParametricEvolution:
 
         # SGD with momentum (thread-safe write)
         with self._lock:
-            self._momentum_A = self.config.momentum * self._momentum_A - self.config.learning_rate * grad_A
-            self._momentum_B = self.config.momentum * self._momentum_B - self.config.learning_rate * grad_B
+            self._momentum_A = (
+                self.config.momentum * self._momentum_A - self.config.learning_rate * grad_A
+            )
+            self._momentum_B = (
+                self.config.momentum * self._momentum_B - self.config.learning_rate * grad_B
+            )
             self.A += self._momentum_A
             self.B += self._momentum_B
 
         # Update Fisher information (running EMA of squared gradients)
-        self._fisher_A = 0.9 * self._fisher_A + 0.1 * (grad_A ** 2)
-        self._fisher_B = 0.9 * self._fisher_B + 0.1 * (grad_B ** 2)
+        self._fisher_A = 0.9 * self._fisher_A + 0.1 * (grad_A**2)
+        self._fisher_B = 0.9 * self._fisher_B + 0.1 * (grad_B**2)
+
+        # Update EWC anchors periodically (every 100 updates) to prevent
+        # unbounded drift while still providing short-term stability
+        if self._update_count > 0 and self._update_count % 100 == 0:
+            with self._lock:
+                self._anchor_A = self.A.copy()
+                self._anchor_B = self.B.copy()
+                self._fisher_A = np.zeros_like(self.A)
+                self._fisher_B = np.zeros_like(self.B)
 
         # Track quality
         avg_loss = total_loss / n

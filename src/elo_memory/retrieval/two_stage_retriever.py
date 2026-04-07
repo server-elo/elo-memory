@@ -184,7 +184,10 @@ class TwoStageRetriever:
         return list(episodes_dict.values())
 
     def _final_ranking(
-        self, episodes: List[Episode], query: np.ndarray, query_time: datetime,
+        self,
+        episodes: List[Episode],
+        query: np.ndarray,
+        query_time: datetime,
         query_text: Optional[str] = None,
     ) -> List[Tuple[Episode, float]]:
         """

@@ -134,7 +134,9 @@ class OnlineLearner:
 
         return [buffer_snapshot[i] for i in indices]
 
-    def update_adaptive_threshold(self, current_value: float, threshold_type: str = "surprise") -> None:
+    def update_adaptive_threshold(
+        self, current_value: float, threshold_type: str = "surprise"
+    ) -> None:
         """
         Update adaptive threshold using exponential moving average.
 
@@ -200,7 +202,10 @@ class OnlineLearner:
         ) * (gradient**2)
 
     def online_update(
-        self, observation: np.ndarray, surprise: float, update_fn: Optional[Callable[..., Any]] = None
+        self,
+        observation: np.ndarray,
+        surprise: float,
+        update_fn: Optional[Callable[..., Any]] = None,
     ) -> None:
         """
         Perform online update with experience replay and EWC.

@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PrivacyConfig:
     """Configuration for differential privacy."""
-    epsilon: float = 1.0           # Total privacy budget
-    delta: float = 1e-5            # Failure probability
-    sensitivity: float = 1.0       # L2 sensitivity of embeddings
+
+    epsilon: float = 1.0  # Total privacy budget
+    delta: float = 1e-5  # Failure probability
+    sensitivity: float = 1.0  # L2 sensitivity of embeddings
     min_noise_scale: float = 0.01  # Minimum noise even at high budget
 
 
@@ -64,6 +65,7 @@ class DifferentialPrivacy:
     def anonymize_text(self, text: str) -> str:
         """Hash identifiable text content (names, emails, etc.)."""
         import re
+
         # Replace email-like patterns
         text = re.sub(
             r"\b[\w.+-]+@[\w-]+\.[\w.]+\b",
@@ -113,16 +115,20 @@ class PrivacyAccountant:
         if self._spent + epsilon > self.total_budget:
             logger.warning(
                 "Privacy budget exhausted: spent=%.2f, requested=%.2f, total=%.2f",
-                self._spent, epsilon, self.total_budget,
+                self._spent,
+                epsilon,
+                self.total_budget,
             )
             return False
 
         self._spent += epsilon
-        self._queries.append({
-            "epsilon": epsilon,
-            "cumulative": self._spent,
-            "description": description,
-        })
+        self._queries.append(
+            {
+                "epsilon": epsilon,
+                "cumulative": self._spent,
+                "description": description,
+            }
+        )
         return True
 
     def get_report(self) -> Dict[str, Any]:

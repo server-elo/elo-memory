@@ -36,20 +36,22 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AuditEntry:
     """Single entry in the audit log."""
+
     episode_id: str
-    action: str         # "create", "read", "update", "delete", "verify"
+    action: str  # "create", "read", "update", "delete", "verify"
     timestamp: str
-    actor: str = ""     # Who performed the action
+    actor: str = ""  # Who performed the action
     details: str = ""
 
 
 @dataclass
 class ChainLink:
     """Single link in the hash chain."""
+
     episode_id: str
-    content_hash: str     # SHA-256 of episode content
-    previous_hash: str    # Hash of the previous link
-    chain_hash: str       # SHA-256(content_hash + previous_hash)
+    content_hash: str  # SHA-256 of episode content
+    previous_hash: str  # Hash of the previous link
+    chain_hash: str  # SHA-256(content_hash + previous_hash)
     sequence_number: int
     timestamp: str
 
@@ -85,9 +87,7 @@ class MemoryAuditor:
         content_hash = self._hash_episode(episode)
         previous_hash = self._chain[-1].chain_hash if self._chain else "0" * 64
 
-        chain_hash = hashlib.sha256(
-            (content_hash + previous_hash).encode()
-        ).hexdigest()
+        chain_hash = hashlib.sha256((content_hash + previous_hash).encode()).hexdigest()
 
         link = ChainLink(
             episode_id=episode.episode_id,
@@ -126,9 +126,10 @@ class MemoryAuditor:
             self._log("verify", episode.episode_id, "PASS — integrity verified")
         else:
             self._log(
-                "verify", episode.episode_id,
+                "verify",
+                episode.episode_id,
                 f"FAIL — hash mismatch (expected {link.content_hash[:16]}..., "
-                f"got {current_hash[:16]}...)"
+                f"got {current_hash[:16]}...)",
             )
             if episode.episode_id not in self._tampered:
                 self._tampered.append(episode.episode_id)
@@ -149,22 +150,24 @@ class MemoryAuditor:
         for i, link in enumerate(self._chain):
             # Verify link to previous
             if link.previous_hash != prev_hash:
-                broken_links.append({
-                    "sequence": i,
-                    "episode_id": link.episode_id,
-                    "error": "previous_hash mismatch",
-                })
+                broken_links.append(
+                    {
+                        "sequence": i,
+                        "episode_id": link.episode_id,
+                        "error": "previous_hash mismatch",
+                    }
+                )
 
             # Verify chain hash
-            expected = hashlib.sha256(
-                (link.content_hash + link.previous_hash).encode()
-            ).hexdigest()
+            expected = hashlib.sha256((link.content_hash + link.previous_hash).encode()).hexdigest()
             if link.chain_hash != expected:
-                broken_links.append({
-                    "sequence": i,
-                    "episode_id": link.episode_id,
-                    "error": "chain_hash mismatch",
-                })
+                broken_links.append(
+                    {
+                        "sequence": i,
+                        "episode_id": link.episode_id,
+                        "error": "chain_hash mismatch",
+                    }
+                )
 
             prev_hash = link.chain_hash
 
@@ -382,13 +385,9 @@ class MemoryAuditor:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-            self._chain = [
-                ChainLink(**link) for link in data.get("chain", [])
-            ]
+            self._chain = [ChainLink(**link) for link in data.get("chain", [])]
             self._hash_index = {l.episode_id: l for l in self._chain}
-            self._audit_log = [
-                AuditEntry(**entry) for entry in data.get("audit_log", [])
-            ]
+            self._audit_log = [AuditEntry(**entry) for entry in data.get("audit_log", [])]
             self._tampered = data.get("tampered", [])
             self._update_merkle_root()
         except Exception as e:

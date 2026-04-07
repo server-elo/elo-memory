@@ -34,26 +34,28 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PrefetchConfig:
     """Configuration for the predictive pre-fetcher."""
+
     # History
-    max_query_history: int = 500          # Max queries to remember
+    max_query_history: int = 500  # Max queries to remember
     topic_transition_smoothing: float = 0.1  # Laplace smoothing for transition probs
 
     # Cache
-    cache_size: int = 50                  # Max pre-fetched results to cache
-    cache_ttl_seconds: float = 300.0      # Cache entry time-to-live
+    cache_size: int = 50  # Max pre-fetched results to cache
+    cache_ttl_seconds: float = 300.0  # Cache entry time-to-live
 
     # Prediction
-    top_k_predictions: int = 5            # Number of predicted next queries
-    temporal_bins: int = 24               # Hour-of-day bins
-    min_observations: int = 5             # Min observations before predicting
+    top_k_predictions: int = 5  # Number of predicted next queries
+    temporal_bins: int = 24  # Hour-of-day bins
+    min_observations: int = 5  # Min observations before predicting
 
 
 @dataclass
 class CachedResult:
     """A pre-fetched memory result in the warm cache."""
+
     query_text: str
     results: List[Tuple[str, float]]  # (text, score) pairs
-    created_at: float                 # time.time()
+    created_at: float  # time.time()
     hit_count: int = 0
 
 
@@ -103,13 +105,15 @@ class PredictivePrefetcher:
         entities = entities or []
 
         # Record in history
-        self._history.append({
-            "query": query_text,
-            "topics": topics,
-            "entities": entities,
-            "hour": now.hour,
-            "timestamp": time.time(),
-        })
+        self._history.append(
+            {
+                "query": query_text,
+                "topics": topics,
+                "entities": entities,
+                "hour": now.hour,
+                "timestamp": time.time(),
+            }
+        )
 
         # Update topic transitions
         for prev_topic in self._last_topics:
@@ -119,7 +123,7 @@ class PredictivePrefetcher:
 
         # Update entity co-occurrence
         for i, e1 in enumerate(entities):
-            for e2 in entities[i + 1:]:
+            for e2 in entities[i + 1 :]:
                 self._entity_cooccurrence[e1][e2] += 1
                 self._entity_cooccurrence[e2][e1] += 1
 
@@ -158,7 +162,9 @@ class PredictivePrefetcher:
                 if topic in self._transitions:
                     transition_counts = self._transitions[topic]
                     total = sum(transition_counts.values()) + self.config.topic_transition_smoothing
-                    for next_topic, count in transition_counts.most_common(self.config.top_k_predictions):
+                    for next_topic, count in transition_counts.most_common(
+                        self.config.top_k_predictions
+                    ):
                         prob = (count + self.config.topic_transition_smoothing) / total
                         scores[f"topic:{next_topic}"] += prob
 
@@ -179,13 +185,15 @@ class PredictivePrefetcher:
 
         # Rank and format predictions
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        for pred_key, score in ranked[:self.config.top_k_predictions]:
+        for pred_key, score in ranked[: self.config.top_k_predictions]:
             kind, value = pred_key.split(":", 1)
-            predictions.append({
-                "type": kind,
-                "value": value,
-                "confidence": min(1.0, score),
-            })
+            predictions.append(
+                {
+                    "type": kind,
+                    "value": value,
+                    "confidence": min(1.0, score),
+                }
+            )
 
         return predictions
 
@@ -197,10 +205,12 @@ class PredictivePrefetcher:
             if topic in self._transitions:
                 total = sum(self._transitions[topic].values())
                 for next_topic, count in self._transitions[topic].items():
-                    topic_scores[next_topic] = topic_scores.get(next_topic, 0.0) + count / max(total, 1)
+                    topic_scores[next_topic] = topic_scores.get(next_topic, 0.0) + count / max(
+                        total, 1
+                    )
 
         ranked = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)
-        return ranked[:self.config.top_k_predictions]
+        return ranked[: self.config.top_k_predictions]
 
     # ── Cache ────────────────────────────────────────────────────
 
@@ -252,15 +262,16 @@ class PredictivePrefetcher:
         return entry.results
 
     def _cache_key(self, text: str) -> str:
-        return text.lower().strip()[:100]
+        import hashlib
+
+        return hashlib.md5(text.lower().strip().encode()).hexdigest()
 
     def _evict_cache(self) -> None:
         """Evict expired and excess cache entries."""
         now = time.time()
         # Remove expired
         expired = [
-            k for k, v in self._cache.items()
-            if now - v.created_at > self.config.cache_ttl_seconds
+            k for k, v in self._cache.items() if now - v.created_at > self.config.cache_ttl_seconds
         ]
         for k in expired:
             del self._cache[k]
@@ -277,7 +288,9 @@ class PredictivePrefetcher:
         return {
             "query_history_size": len(self._history),
             "topic_transitions": sum(sum(c.values()) for c in self._transitions.values()),
-            "entity_cooccurrences": sum(sum(c.values()) for c in self._entity_cooccurrence.values()),
+            "entity_cooccurrences": sum(
+                sum(c.values()) for c in self._entity_cooccurrence.values()
+            ),
             "temporal_patterns": sum(sum(c.values()) for c in self._temporal_patterns.values()),
             "cache_size": len(self._cache),
             "cache_hits": total_hits,
